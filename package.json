@@ -1,0 +1,13 @@
+{
+  "name": "@tanstack/source",
+  "version": "0.0.0",
+  "license": "MIT",
+  "scripts": {},
+  "private": true,
+  "dependencies": {},
+  "devDependencies": {
+    "@nx/js": "19.5.1",
+    "@nx/workspace": "19.5.1",
+    "nx": "19.5.1"
+  }
+}
