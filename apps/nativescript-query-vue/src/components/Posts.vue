@@ -1,8 +1,8 @@
 <script lang="ts" setup>
 import { EventData, ItemEventData, ListView, Page } from '@nativescript/core';
+import { apiUrl, Post, stateDidVisit, stateVisitedLinks } from '@org/state';
 import { computed, $navigateTo } from 'nativescript-vue';
 import { useQuery } from '@tanstack/vue-query';
-import { apiUrl, Post, stateDidVisit, stateVisitedLinks } from '@org/state';
 import PostDetail from './Post.vue';
 
 const fetcher = async (): Promise<Post[]> =>
@@ -14,6 +14,7 @@ const { data, refetch } = useQuery({
 });
 
 const items = computed(() => {
+  console.log('posts updated!', data)
   return (data.value || []).map(stateDidVisit);
 });
 
@@ -44,15 +45,7 @@ function navigatedTo() {
     // only when links have been visited
     // for demonstration purposes, allows list to highlight visited posts green
     refetch();
-    if (list) {
-      list.refresh();
-    }
   }
-}
-
-let list: ListView;
-function loadedList(args) {
-  list = args.object as ListView;
 }
 </script>
 
@@ -62,11 +55,7 @@ function loadedList(args) {
       <ActionBar title="Tanstack Query"> </ActionBar>
 
       <GridLayout>
-        <ListView
-          :items="items"
-          @itemTap="navigateToDetails"
-          @loaded="loadedList"
-        >
+        <ListView :items="items" @itemTap="navigateToDetails">
           <template #default="{ item }">
             <StackLayout class="p-4">
               <Label

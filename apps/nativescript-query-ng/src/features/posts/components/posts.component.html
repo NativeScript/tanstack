@@ -1,6 +1,8 @@
 <ActionBar title="Tanstack Query"> </ActionBar>
 <GridLayout>
-  <ListView [items]="postsQuery.data()" (itemTap)="viewDetail($event)">
+  <ListView 
+    [items]="postsQuery.data()" 
+    (itemTap)="viewDetail($event)">
     <ng-template let-post="item">
       <StackLayout class="p-4">
         <Label

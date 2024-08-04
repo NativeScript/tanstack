@@ -1,7 +1,7 @@
 <script lang="ts" setup>
-import { ref, computed } from 'nativescript-vue';
-import { useQuery } from '@tanstack/vue-query';
 import { apiDetailUrl, Post } from '@org/state';
+import { computed } from 'nativescript-vue';
+import { useQuery } from '@tanstack/vue-query';
 
 const props = defineProps<{
   post: Post;

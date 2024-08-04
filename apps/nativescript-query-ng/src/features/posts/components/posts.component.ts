@@ -5,9 +5,9 @@ import {
   injectQuery,
   injectQueryClient,
 } from '@tanstack/angular-query-experimental';
+import { stateDidVisit, stateVisitedLinks } from '@org/state';
 import { lastValueFrom, map } from 'rxjs';
 import { PostsService } from '../../../core/services/posts.service';
-import { stateDidVisit, stateVisitedLinks } from '@org/state';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,

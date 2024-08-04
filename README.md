@@ -22,7 +22,7 @@ npm run clean
 
 ## Try TanStack Query
 
-<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Angular_full_color_logo.svg/2048px-Angular_full_color_logo.svg.png" width="60"/>
+<img src="https://logosandtypes.com/wp-content/uploads/2024/01/angular.svg" width="60"/>
 
 ```bash
 npx nx run nativescript-query-ng:ios
