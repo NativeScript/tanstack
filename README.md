@@ -28,11 +28,15 @@ npm run clean
 npx nx run nativescript-query-ng:ios
 ```
 
+You can also try on StackBlitz: https://stackblitz.com/edit/nativescript-tanstack-angular?file=src%2Fapp%2Fitem%2Fposts.component.ts
+
 <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/95/Vue.js_Logo_2.svg/1024px-Vue.js_Logo_2.svg.png?20170919082558" width="60"/>
 
 ```bash
 npx nx run nativescript-query-vue:ios
 ```
+
+You can also try on StackBlitz: https://stackblitz.com/edit/nativescript-tanstack-vue?file=src%2Fcomponents%2FPosts.vue
 
 ## What is This?
 
