@@ -1,0 +1,16 @@
+android {
+  compileSdkVersion 34
+  buildToolsVersion "34"
+  defaultConfig {
+    minSdkVersion 24
+    targetSdkVersion 34
+    generatedDensities = []
+    multiDexEnabled true
+    versionName = "1.0.0"
+    versionCode = 1
+  }
+
+  aaptOptions {
+    additionalParameters "--no-version-vectors"
+  }
+}

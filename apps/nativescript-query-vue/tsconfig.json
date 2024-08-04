@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDirs": [".", "../.."],
+    "baseUrl": ".",
+    "paths": {
+      "@org/nativescript-utils": [
+        "../../libs/nativescript-utils/src/index.ts"
+      ],
+      "@org/state": [
+        "../../libs/state/src/index.ts"
+      ]
+    }
+  }
+}

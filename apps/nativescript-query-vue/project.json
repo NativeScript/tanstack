@@ -1,0 +1,63 @@
+{
+  "name": "nativescript-query-vue",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/nativescript-query-vue/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "@nativescript/nx:build",
+      "options": {
+        "noHmr": true,
+        "production": true,
+        "uglify": true,
+        "release": true,
+        "forDevice": true
+      }
+    },
+    "ios": {
+      "executor": "@nativescript/nx:build",
+      "options": {
+        "platform": "ios",
+        "noHmr": true
+      },
+      "configurations": {
+        "build": {
+          "copyTo": "./dist/build.ipa"
+        },
+        "prod": {
+          "combineWithConfig": "build:prod"
+        }
+      }
+    },
+    "android": {
+      "executor": "@nativescript/nx:build",
+      "options": {
+        "platform": "android",
+        "noHmr": true
+      },
+      "configurations": {
+        "build": {
+          "copyTo": "./dist/build.apk"
+        },
+        "prod": {
+          "combineWithConfig": "build:prod"
+        }
+      }
+    },
+    "clean": {
+      "executor": "@nativescript/nx:build",
+      "options": {
+        "clean": true
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:eslint",
+      "options": {
+        "lintFilePatterns": [
+          "apps/nativescript-query-vue/**/*.ts",
+          "apps/nativescript-query-vue/src/**/*.html"
+        ]
+      }
+    }
+  }
+}

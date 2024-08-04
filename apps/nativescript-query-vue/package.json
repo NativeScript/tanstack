@@ -1,0 +1,17 @@
+{
+  "name": "nativescript-query-vue",
+  "main": "src/app.ts",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@nativescript/core": "*",
+    "nativescript-vue": "3.0.0-rc.2"
+  },
+  "devDependencies": {
+    "@nativescript/android": "~8.8.0",
+    "@nativescript/ios": "~8.8.0",
+    "@nativescript/tailwind": "^2.1.0",
+    "vue": "^3.3.4",
+    "typescript": "~5.5.0"
+  }
+}

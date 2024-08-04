@@ -1,0 +1,14 @@
+{
+  "name": "queryng",
+  "main": "./src/main.ts",
+  "license": "SEE LICENSE IN <your-license-filename>",
+  "version": "0.0.0",
+  "dependencies": {
+    "@nativescript/core": "*"
+  },
+  "devDependencies": {
+    "@nativescript/android": "~8.8.0",
+    "@nativescript/ios": "~8.8.0",
+    "@nativescript/tailwind": "^2.1.0"
+  }
+}

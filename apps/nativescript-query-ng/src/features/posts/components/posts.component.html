@@ -1,0 +1,17 @@
+<ActionBar title="Tanstack Query"> </ActionBar>
+<GridLayout>
+  <ListView [items]="postsQuery.data()" (itemTap)="viewDetail($event)">
+    <ng-template let-post="item">
+      <StackLayout class="p-4">
+        <Label
+          class="text-lg"
+          [ngClass]="{
+            'text-gray-500': !post.visited,
+            'text-green-500': post.visited
+          }"
+          >- {{ post.title }}</Label
+        >
+      </StackLayout>
+    </ng-template>
+  </ListView>
+</GridLayout>

@@ -1,0 +1,22 @@
+<ActionBar [title]="'Post ' + postId()"> </ActionBar>
+<GridLayout rows="auto,auto,*,auto" class="p-6">
+  @if (postQuery.status() === 'pending') {
+  <Label class="text-black italic text-lg m-2">Loading...</Label>
+  } @else if (postQuery.status() === 'error') {
+  <Label class="text-red-500 font-bold text-lg m-2"
+    >Error: {{ postQuery.error()?.message }}</Label
+  >
+  } @if (postQuery.data(); as post) {
+  <Label row="1" class="text-black text-2xl leading-3" textWrap="true">{{
+    post.title
+  }}</Label>
+  <GridLayout row="2" class="mt-6">
+    <Label class="text-black/75 text-lg leading-3 align-top" textWrap="true">{{
+      post.body
+    }}</Label>
+  </GridLayout>
+  @if (postQuery.isFetching()) {
+
+  <Label row="3" class="text-black/50 italic m-2">Background Updating...</Label>
+  } }
+</GridLayout>
