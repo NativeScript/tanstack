@@ -42,7 +42,5 @@ You can also try on StackBlitz: https://stackblitz.com/edit/nativescript-tanstac
 
 An Nx workspace with Angular and Vue iOS & Android apps all utilizing TanStack Query while rendering natively to each platform.
 
-The workspace combines npx workspaces with Nx to hoist dependencies where needed to share.
-
 - Each app shares Resources from [here](tools/App_Resources).
 - Each app's `nativescript.config.ts` configures the shared resources via the `appResourcesPath` property
