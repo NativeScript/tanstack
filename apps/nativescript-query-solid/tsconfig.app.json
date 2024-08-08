@@ -1,0 +1,36 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "lib": ["ESNext", "DOM"],
+    "sourceMap": true,
+    "jsx": "preserve",
+    "jsxImportSource": "@nativescript-dom/solidjs-types",
+    "noEmitHelpers": true,
+    "importHelpers": true,
+    "baseUrl": ".",
+    "paths": {
+      "~/*": ["app/*"],
+      "@/*": ["app/*"]
+    },
+    "allowJs": true,
+    "types": [
+      "node",
+      "@nativescript-dom/core-types",
+      "@nativescript-dom/solidjs-types"
+    ],
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "downlevelIteration": true,
+    "maxNodeModuleJsDepth": 5
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "platforms"]
+}
