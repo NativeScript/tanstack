@@ -30,9 +30,7 @@ export const List: Component<
       items={{
         length: props.items?.length,
         getItem(index) {
-          return {
-            index: props.items?.[index],
-          };
+          return props.items?.[index];
         },
       }}
       itemTemplateSelector={(item, index) => {
