@@ -13,8 +13,8 @@
     "importHelpers": true,
     "baseUrl": ".",
     "paths": {
-      "~/*": ["app/*"],
-      "@/*": ["app/*"]
+      "~/*": ["src/*"],
+      "@/*": ["src/*"]
     },
     "allowJs": true,
     "types": [

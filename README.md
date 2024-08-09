@@ -4,7 +4,7 @@
 
 <img src="https://raw.githubusercontent.com/NativeScript/artwork/main/logo/export/NativeScript_Logo_Wide_White_Blue_Rounded_Blue.png" width="200"/> 
 
-Android and iOS apps using [TanStack Query](https://tanstack.com/query/latest) with Angular and Vue.
+Android and iOS apps using [TanStack Query](https://tanstack.com/query/latest) with Angular, Solid and Vue.
 
 - [Setup](#setup)
 - [Try TanStack Query](#try-tanstack-query)
@@ -25,14 +25,25 @@ npm run clean
 <img src="https://logosandtypes.com/wp-content/uploads/2024/01/angular.svg" width="60"/>
 
 ```bash
+npx nx run nativescript-query-ng:android
 npx nx run nativescript-query-ng:ios
 ```
 
 You can also try on StackBlitz: https://stackblitz.com/edit/nativescript-tanstack-angular?file=src%2Fapp%2Fitem%2Fposts.component.ts
 
+<img src="https://www.solidjs.com/img/logo/without-wordmark/logo.png" width="60"/>
+
+```bash
+npx nx run nativescript-query-solid:android
+npx nx run nativescript-query-solid:ios
+```
+
+You can also try on StackBlitz: https://stackblitz.com/edit/nativescript-tanstack-solid?file=src%2Froutes%2Fposts.tsx
+
 <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/95/Vue.js_Logo_2.svg/1024px-Vue.js_Logo_2.svg.png?20170919082558" width="60"/>
 
 ```bash
+npx nx run nativescript-query-vue:android
 npx nx run nativescript-query-vue:ios
 ```
 
@@ -40,7 +51,7 @@ You can also try on StackBlitz: https://stackblitz.com/edit/nativescript-tanstac
 
 ## What is This?
 
-An Nx workspace with Angular and Vue iOS & Android apps all utilizing TanStack Query while rendering natively to each platform.
+An Nx workspace with Angular, Solid and Vue iOS & Android apps all utilizing TanStack Query while rendering natively to each platform.
 
 - Each app shares Resources from [here](tools/App_Resources).
 - Each app's `nativescript.config.ts` configures the shared resources via the `appResourcesPath` property
