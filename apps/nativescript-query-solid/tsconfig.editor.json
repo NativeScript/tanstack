@@ -1,0 +1,10 @@
+{
+    "extends": "./tsconfig.json",
+    "include": ["**/*.tsx", "**/*.ts"],
+    "compilerOptions": {
+      "jsx": "preserve",
+      "jsxImportSource": "@nativescript-dom/solidjs-types",
+      "types": ["jest", "node"]
+    }
+  }
+  
