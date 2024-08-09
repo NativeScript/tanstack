@@ -24,6 +24,7 @@ export const DynamicList: Component<
   const owner = getOwner();
   const { items, renderItem, onItemType, itemTypes, ...restProps } = props;
   const templates = props.itemTypes || ["_default"];
+
   return (
     <contentview
       style={{
@@ -37,9 +38,7 @@ export const DynamicList: Component<
         items={{
           length: props.items?.length,
           getItem(index: number) {
-            return {
-              index: props.items?.[index],
-            };
+            return props.items?.[index];
           },
         }}
         itemTemplateSelector={(item: any, index: any) => {
@@ -55,6 +54,7 @@ export const DynamicList: Component<
                   const { view, item, index } = event;
                   const update_solid_context = (view as any)
                     .__update_solid_context;
+
                   if (update_solid_context) {
                     update_solid_context(item, index, key);
                   } else {

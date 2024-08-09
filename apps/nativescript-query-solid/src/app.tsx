@@ -62,7 +62,7 @@ declare module "@nativescript-dom/solidjs-types/jsx-runtime" {
   }
 }
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient();
 
 const App = () => {
   return (

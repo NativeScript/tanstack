@@ -1,67 +1,64 @@
-import {
-  QueryClient,
-  QueryClientProvider,
-  createQuery,
-} from '@tanstack/solid-query';
-import { Component, createSignal, For } from 'solid-js';
 import { apiUrl, Post } from '@org/state';
-import { useRouter } from '../router';
+import { createQuery } from '@tanstack/solid-query';
+import { Component, createSignal } from 'solid-js';
 import { DynamicList } from '../components/collectionview';
+import { useRouter } from '../router';
+import { alert } from '@nativescript/core';
 
-const fetcher = async (): Promise<Post[]> =>
-  await fetch(apiUrl).then((response) => {
-    console.log('response:', response);
-    return response.json();
-  });
+const fetcher = async (): Promise<Post[]> => {
+  try {
+    const response = await fetch(apiUrl);
+    const data = await response.json();
+    return data;
+  } catch (e) {
+    console.log(e);
+    return [];
+  }
+};
 
 const Item: Component<{
-  item?: () => any;
+  item?: () => Post;
   index?: () => number;
   type: () => string;
 }> = (props) => {
-  console.log('props:', props);
-  return props.type() === 'even' ? (
-    <stacklayout
-      style={{ height: 100, padding: 10, backgroundColor: '#f0f0f0' }}
-    >
-      <label text={props.index?.() + ' ' + props.type()} className='text-white' />
-    </stacklayout>
-  ) : (
-    <stacklayout
-      style={{ height: 50, padding: 10, backgroundColor: '#a9a9a9' }}
-    >
-      <label text={props.index?.() + ' ' + props.type()} className='text-white' />
-    </stacklayout>
+  return (
+    <label
+      className="h-50 p-5 bg-[#06070e] text-white border-b border-gray-600"
+      text={props.item().title}
+      textWrap={true}
+      on:tap={() => {
+        alert(props.item().body)
+      }}
+    />
   );
 };
 
 export const Home = () => {
   const router = useRouter();
-  const goToPage = (name: 'GalaxyButton' | 'GrowingPlant') => {
-    // just showing ios shared transition with platform spring built in
-    router.navigate(name);
-  };
-
   const query = createQuery(() => ({
     queryKey: ['posts'],
     queryFn: fetcher,
   }));
 
-  const [items] = createSignal(query.data);
+  const items = () => query.data;
+
+  const goToPage = (name: 'GalaxyButton' | 'GrowingPlant') => {
+    // just showing ios shared transition with platform spring built in
+    router.navigate(name);
+  };
 
   return (
     <>
       <actionbar title="Home" className="bg-[#06070e]" />
       <gridlayout rows="*,auto" className="bg-[#06070e]">
-
         <DynamicList
-          itemTypes={['even', 'odd']}
+          itemTypes={['post']}
           items={items()}
           renderItem={({ item, index, type }) => (
             <Item item={item} index={index} type={type} />
           )}
           onItemType={(item, index) => {
-            return index % 2 === 0 ? 'even' : 'odd';
+            return 'post';
           }}
         />
         <button
