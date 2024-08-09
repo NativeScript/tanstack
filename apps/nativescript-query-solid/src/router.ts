@@ -1,11 +1,11 @@
 import { createStackRouter, RouteDefinition } from "solid-navigation";
+import { Post } from "@org/state";
 
 declare module "solid-navigation" {
   export interface Routers {
     Default: {
-      Home: RouteDefinition;
-      GalaxyButton: RouteDefinition;
-      GrowingPlant: RouteDefinition;
+      Posts: RouteDefinition;
+      Post: RouteDefinition<Post>;
     };
   }
 }

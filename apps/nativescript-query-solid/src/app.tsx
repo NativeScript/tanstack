@@ -1,11 +1,10 @@
 import { CollectionView } from "@nativescript-community/ui-collectionview";
 import { ItemLoadingEventData } from "@nativescript-dom/core-types";
-import { Route, StackRouter } from "./router";
-import { Home } from "./routes/home";
 import { makeListView, registerElement } from "dominative";
-import { GalaxyButton } from "./routes/galaxy-button";
-import { GrowingPlant } from "./routes/growing-plant";
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
+import { Route, StackRouter } from "./router";
+import { Posts } from "./routes/posts";
+import { Post } from "./routes/post";
 
 registerElement(
   "collectionview",
@@ -67,10 +66,9 @@ const queryClient = new QueryClient();
 const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
-      <StackRouter initialRouteName="Home">
-        <Route name="Home" component={Home} />
-        <Route name="GalaxyButton" component={GalaxyButton} />
-        <Route name="GrowingPlant" component={GrowingPlant} />
+      <StackRouter initialRouteName="Posts">
+        <Route name="Posts" component={Posts} />
+        <Route name="Post" component={Post} />
       </StackRouter>
     </QueryClientProvider>
   );
