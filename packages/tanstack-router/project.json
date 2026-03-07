@@ -1,0 +1,54 @@
+{
+  "name": "tanstack-router",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "library",
+  "sourceRoot": "packages/tanstack-router/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["rm -rf dist/packages/tanstack-router", "tsc -p packages/tanstack-router/tsconfig.json --noEmit", "tsup --config packages/tanstack-router/tsup.config.ts", "cp packages/tanstack-router/package.json dist/packages/tanstack-router/package.json", "cp packages/tanstack-router/README.md dist/packages/tanstack-router/README.md", "cp packages/tanstack-router/nativescript.webpack.js dist/packages/tanstack-router/nativescript.webpack.js", "cp packages/tanstack-router/solid-web-shim.js dist/packages/tanstack-router/solid-web-shim.js", "cp packages/tanstack-router/solid-js-jsx-runtime-shim.js dist/packages/tanstack-router/solid-js-jsx-runtime-shim.js", "cp LICENSE dist/packages/tanstack-router/LICENSE"],
+        "parallel": false
+      },
+      "outputs": ["{workspaceRoot}/dist/packages/tanstack-router"]
+    },
+    "build.all": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["node tools/scripts/build-finish.ts tanstack-router"],
+        "parallel": false
+      },
+      "outputs": ["{workspaceRoot}/dist/packages/tanstack-router"],
+      "dependsOn": [
+        {
+          "target": "build.all",
+          "projects": "dependencies"
+        },
+        {
+          "target": "build",
+          "projects": "self"
+        }
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vitest run --config packages/tanstack-router/vitest.config.ts"
+      }
+    },
+    "focus": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["nx g @nativescript/plugin-tools:focus-packages tanstack-router"],
+        "parallel": false
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:eslint",
+      "options": {
+        "lintFilePatterns": ["packages/tanstack-router/**/*.ts", "packages/tanstack-router/**/*.tsx", "packages/tanstack-router/**/*.js"]
+      }
+    }
+  },
+  "tags": []
+}

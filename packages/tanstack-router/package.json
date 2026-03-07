@@ -1,0 +1,84 @@
+{
+  "name": "@nativescript/tanstack-router",
+  "version": "0.0.1",
+  "description": "TanStack Router for NativeScript",
+  "main": "index.cjs",
+  "module": "index.mjs",
+  "types": "index.d.ts",
+  "files": [
+    "index.cjs",
+    "index.mjs",
+    "index.d.ts",
+    "solid",
+    "nativescript.webpack.js",
+    "solid-web-shim.js",
+    "solid-js-jsx-runtime-shim.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs",
+      "require": "./index.cjs",
+      "default": "./index.mjs"
+    },
+    "./solid": {
+      "types": "./solid/index.d.ts",
+      "import": "./solid/index.mjs",
+      "require": "./solid/index.cjs",
+      "default": "./solid/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "nativescript": {
+    "platforms": {
+      "ios": "6.0.0",
+      "android": "6.0.0"
+    }
+  },
+  "scripts": {
+    "clean": "rm -rf ../../dist/packages/tanstack-router",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "npm run clean && npm run typecheck && tsup --config tsup.config.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NativeScript/tanstack.git"
+  },
+  "keywords": [
+    "NativeScript",
+    "JavaScript",
+    "TypeScript",
+    "iOS",
+    "Android",
+    "TanStack Router",
+    "SolidJS"
+  ],
+  "author": {
+    "name": "NativeScript",
+    "email": "oss@nativescript.org"
+  },
+  "bugs": {
+    "url": "https://github.com/NativeScript/tanstack/issues"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/NativeScript/tanstack",
+  "readmeFilename": "README.md",
+  "dependencies": {
+    "@tanstack/history": "^1.100.0",
+    "@tanstack/solid-router": "^1.166.0"
+  },
+  "peerDependencies": {
+    "@nativescript-community/solid-js": ">=0.1.0",
+    "@nativescript/core": ">=9.0.0",
+    "solid-js": ">=1.9.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "~5.9.0",
+    "vitest": "^3.1.1"
+  }
+}
