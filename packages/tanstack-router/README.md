@@ -225,15 +225,6 @@ Enable them explicitly:
 />
 ```
 
-## NativeScript Webpack Integration
-
-This package ships a `nativescript.webpack.js` extension so the `solid-js/web`
-alias shim is applied automatically in NativeScript projects during final
-webpack config merge.
-
-You should not need to manually add `solid-js/web` alias overrides in your app
-webpack config when using this package.
-
 ## API Overview
 
 ### Root (`@nativescript/tanstack-router`)

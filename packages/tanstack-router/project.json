@@ -7,7 +7,18 @@
     "build": {
       "executor": "nx:run-commands",
       "options": {
-        "commands": ["rm -rf dist/packages/tanstack-router", "tsc -p packages/tanstack-router/tsconfig.json --noEmit", "tsup --config packages/tanstack-router/tsup.config.ts", "cp packages/tanstack-router/package.json dist/packages/tanstack-router/package.json", "cp packages/tanstack-router/README.md dist/packages/tanstack-router/README.md", "cp packages/tanstack-router/nativescript.webpack.js dist/packages/tanstack-router/nativescript.webpack.js", "cp packages/tanstack-router/solid-web-shim.js dist/packages/tanstack-router/solid-web-shim.js", "cp packages/tanstack-router/solid-js-jsx-runtime-shim.js dist/packages/tanstack-router/solid-js-jsx-runtime-shim.js", "cp LICENSE dist/packages/tanstack-router/LICENSE"],
+        "commands": [
+          "rm -rf dist/packages/tanstack-router",
+          "tsc -p packages/tanstack-router/tsconfig.json --noEmit",
+          "tsup --config packages/tanstack-router/tsup.config.ts",
+          "cp packages/tanstack-router/package.json dist/packages/tanstack-router/package.json",
+          "cp packages/tanstack-router/README.md dist/packages/tanstack-router/README.md",
+          "cp packages/tanstack-router/nativescript.vite.mjs dist/packages/tanstack-router/nativescript.vite.mjs",
+          "cp packages/tanstack-router/nativescript.webpack.js dist/packages/tanstack-router/nativescript.webpack.js",
+          "cp packages/tanstack-router/solid-web-shim.js dist/packages/tanstack-router/solid-web-shim.js",
+          "cp packages/tanstack-router/solid-js-jsx-runtime-shim.js dist/packages/tanstack-router/solid-js-jsx-runtime-shim.js",
+          "cp LICENSE dist/packages/tanstack-router/LICENSE"
+        ],
         "parallel": false
       },
       "outputs": ["{workspaceRoot}/dist/packages/tanstack-router"]
