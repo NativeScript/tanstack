@@ -78,7 +78,7 @@ export default function Home() {
             </stacklayout>
           </gridlayout>
 
-          <Link to={`/posts/${featured().id}`} state={featuredStoryTransitionState}>
+          <Link to="/posts/$postId" params={{ postId: featured().id }} state={featuredStoryTransitionState}>
             <gridlayout rows="220, auto" class="rounded-[24] bg-white dark:bg-[#0e1628]" style="overflow: hidden;">
               <imagecacheit row="0" src={featured().coverUrl} stretch="aspectFill" />
 
@@ -126,7 +126,7 @@ export default function Home() {
               <label text="Route params + loader detail page" class="text-[#8790a2] dark:text-[#9aa7c7] text-[13px] mt-1 leading-[3]" textWrap={true} />
             </stacklayout>
             <stacklayout col="1">
-              <Link to="/posts/2">
+              <Link to="/posts/$postId" params={{ postId: '2' }}>
                 <label text="Open" class="bg-[#e8eefc] dark:bg-[#223156] text-[#3458c8] dark:text-[#9db5ff] rounded-full px-4 py-2 text-[14px]" />
               </Link>
             </stacklayout>
@@ -151,7 +151,7 @@ export default function Home() {
               <imagecacheit col="0" src={users()[firstPopular().authorId]?.avatarUrl || author().avatarUrl} class="w-[28] h-[28] rounded-full" stretch="aspectFill" />
               <label col="1" text={`${users()[firstPopular().authorId]?.name || author().name} • ${firstPopular().readMinutes}`} class="text-[#8790a2] dark:text-[#9aa7c7] text-[13px] ml-2 leading-[3]" textWrap={true} />
             </gridlayout>
-            <Link to={`/posts/${firstPopular().id}`} class="mt-3">
+            <Link to="/posts/$postId" params={{ postId: firstPopular().id }} class="mt-3">
               <label text="Read Trending Story" class="text-[#131722] dark:text-[#e5ebff] text-[16px] font-bold bg-[#f4f6fb] dark:bg-[#1a2540] rounded-2xl py-4 text-center" />
             </Link>
           </stacklayout>

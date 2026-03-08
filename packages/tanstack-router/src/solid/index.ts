@@ -5,6 +5,7 @@ export { createNativeScriptHistory } from '../history';
 export { createNativeScriptRouter } from '../router';
 export { NativeScriptRouterProvider } from '../NativeScriptRouterProvider';
 export { Link } from '../Link';
+export type { Register, RegisteredRouter } from '../register';
 export { createNativeScriptNavigationState, createNativeScriptTransitionState } from '../transition-state';
 export { MODAL_SEARCH_PARAM_KEY, withSingleModalPath } from '../modal-state';
 export type { NativeScriptNavigationOptions, NativeScriptNavigationState, NativeScriptNavigationTransition, NativeScriptModalDetent, NativeScriptModalIOSPresentationOptions, NativeScriptModalPresentationOptions, NativeScriptModalOptionsResolver, NativeScriptModalOptionsResolverContext } from '../types';

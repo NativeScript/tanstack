@@ -1,21 +1,25 @@
 import { createMemo, createRenderEffect, onCleanup, type JSX } from 'solid-js'
 import { createElement, insert, setProp } from '@nativescript-community/solid-js'
+import type { AnyRouter, LinkOptions, RoutePaths } from '@tanstack/solid-router'
 import { useRouter, useMatchRoute } from '@tanstack/solid-router'
+import type { RegisteredRouter } from './register'
 import { resolveLinkTapAction, type LinkTapResult } from './link-action'
 import { MODAL_SEARCH_PARAM_KEY, withSingleModalPath } from './modal-state'
 import { closeModalFromRouterContext } from './modal-controller'
 
-interface LinkProps {
-  to?: string
-  params?: Record<string, string>
-  search?: Record<string, unknown> | ((prev: unknown) => unknown)
-  state?: true | Record<string, unknown> | ((prev: unknown) => unknown)
-  hash?: string
-  replace?: boolean
+type LinkProps<
+  TRouter extends AnyRouter = RegisteredRouter,
+  TFrom extends RoutePaths<TRouter['routeTree']> | string = string,
+  TTo extends string | undefined = '.',
+  TMaskFrom extends RoutePaths<TRouter['routeTree']> | string = TFrom,
+  TMaskTo extends string = '.',
+> = Omit<LinkOptions<TRouter, TFrom, TTo, TMaskFrom, TMaskTo>, 'to' | 'state'> & {
+  to?: LinkOptions<TRouter, TFrom, TTo, TMaskFrom, TMaskTo>['to']
+  state?: true | object | ((prev: unknown) => unknown)
   back?: boolean
   closeModal?: boolean
   modalTo?: string
-  fallbackTo?: string
+  fallbackTo?: LinkOptions<TRouter, TFrom, TTo, TMaskFrom, TMaskTo>['to']
   onTap?: () => LinkTapResult
   children: JSX.Element
   class?: string
@@ -24,9 +28,11 @@ interface LinkProps {
   style?: string
 }
 
+type AnyLinkProps = LinkProps<AnyRouter, string, string | undefined, string, string>
+
 function resolveNextState(
   prev: unknown,
-  stateInput: LinkProps['state'],
+  stateInput: AnyLinkProps['state'],
 ): unknown {
   if (stateInput === undefined || stateInput === true) {
     return prev
@@ -51,7 +57,7 @@ function resolveNextState(
   }
 }
 
-function resolveNavigateState(stateInput: LinkProps['state']): true | ((prev: any) => any) | undefined {
+function resolveNavigateState(stateInput: AnyLinkProps['state']): true | ((prev: any) => any) | undefined {
   if (stateInput === undefined) {
     return undefined
   }
@@ -63,7 +69,13 @@ function resolveNavigateState(stateInput: LinkProps['state']): true | ((prev: an
   return (prev: any) => resolveNextState(prev, stateInput)
 }
 
-export function Link(props: LinkProps) {
+export function Link<
+  TRouter extends AnyRouter = RegisteredRouter,
+  const TFrom extends RoutePaths<TRouter['routeTree']> | string = string,
+  const TTo extends string | undefined = '.',
+  const TMaskFrom extends RoutePaths<TRouter['routeTree']> | string = TFrom,
+  const TMaskTo extends string = '.',
+>(props: LinkProps<TRouter, TFrom, TTo, TMaskFrom, TMaskTo>) {
   const router = useRouter()
   const matchRoute = useMatchRoute()
 
@@ -76,7 +88,7 @@ export function Link(props: LinkProps) {
       to: props.to as any,
       params: props.params as any,
       fuzzy: false,
-    })
+    })()
   })
 
   const handleTap = () => {
@@ -114,7 +126,7 @@ export function Link(props: LinkProps) {
     if (props.modalTo) {
       const modalTo = props.modalTo
       router.navigate({
-        to: props.to || '.',
+        to: (props.to || '.') as TTo,
         params: props.params as any,
         state: resolveNavigateState(props.state),
         hash: props.hash as any,
@@ -131,6 +143,10 @@ export function Link(props: LinkProps) {
           return withSingleModalPath(base, modalTo, MODAL_SEARCH_PARAM_KEY)
         },
       } as any)
+      return
+    }
+
+    if (typeof action.to !== 'string') {
       return
     }
 

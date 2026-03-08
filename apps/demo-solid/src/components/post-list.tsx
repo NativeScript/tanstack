@@ -78,7 +78,7 @@ export default function PostList() {
                     columnGap={10}
                   >
                     <stacklayout col="0">
-                      <Link to={`/posts/${post.id}`}>
+                      <Link to="/posts/$postId" params={{ postId: post.id }}>
                         <label
                           text="Read Story"
                           class="text-white text-[16px] font-bold bg-[#11172a] rounded-[18] py-4 text-center"

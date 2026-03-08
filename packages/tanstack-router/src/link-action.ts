@@ -1,17 +1,17 @@
 export type LinkTapResult = void | boolean;
 
-export interface ResolveLinkTapActionOptions {
+export interface ResolveLinkTapActionOptions<TTo extends string | {} = string> {
   onTapResult?: LinkTapResult;
   back?: boolean;
   closeModal?: boolean;
   canGoBack: boolean;
-  fallbackTo?: string;
-  to?: string;
+  fallbackTo?: TTo;
+  to?: TTo;
 }
 
-export type LinkTapAction = { type: 'none' } | { type: 'back' } | { type: 'close_modal' } | { type: 'navigate'; to: string };
+export type LinkTapAction<TTo extends string | {} = string> = { type: 'none' } | { type: 'back' } | { type: 'close_modal' } | { type: 'navigate'; to: TTo };
 
-export function resolveLinkTapAction(opts: ResolveLinkTapActionOptions): LinkTapAction {
+export function resolveLinkTapAction<TTo extends string | {} = string>(opts: ResolveLinkTapActionOptions<TTo>): LinkTapAction<TTo> {
   if (opts.onTapResult === false) {
     return { type: 'none' };
   }

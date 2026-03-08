@@ -112,7 +112,7 @@ export default function PostDetail() {
 
             <gridlayout columns="*" rows="auto" class="mt-5">
               <stacklayout>
-                <Link to={`/posts/${data().nextPostId}`}>
+                <Link to="/posts/$postId" params={{ postId: data().nextPostId }}>
                   <label
                     text="Next Story"
                     class="text-white text-[16px] font-bold bg-[#131722] dark:bg-[#2b3a63] rounded-2xl py-4 text-center"

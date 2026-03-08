@@ -87,7 +87,31 @@ import { Link } from '@nativescript/tanstack-router/solid'
 <Link to="/about">
   <label text="Go to About" />
 </Link>
+
+// Parameterized route (type-safe)
+<Link to="/posts/$postId" params={{ postId: '123' }}>
+  <label text="Open Post 123" />
+</Link>
 ```
+
+### Type Safety Notes
+
+`Link` route typing is validated against your registered router when you add:
+
+```ts
+declare module '@nativescript/tanstack-router/solid' {
+  interface Register {
+    router: typeof router
+  }
+}
+```
+
+For parameterized routes, prefer route patterns + `params`:
+
+- Use: `to="/posts/$postId"` with `params={{ postId: id }}`
+- Avoid: ``to={`/posts/${id}`}``
+
+With strict typing, invalid paths (for example `to="/invalid"`) produce TypeScript errors.
 
 ### Link Back Navigation
 
