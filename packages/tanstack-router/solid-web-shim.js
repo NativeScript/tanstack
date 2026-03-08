@@ -81,3 +81,14 @@ export function pipeToNodeWritable() {}
 export function pipeToWritable() {}
 export function addEventListener() {}
 export function removeEventListener() {}
+export function dynamicProperty() {}
+export function setAttributeNS() {}
+export const Aliases = {};
+export function getPropAlias(prop) {
+  return prop;
+}
+export const Properties = new Set();
+export const ChildProperties = new Set();
+export const DelegatedEvents = new Set();
+export const SVGElements = new Set();
+export const SVGNamespace = {};

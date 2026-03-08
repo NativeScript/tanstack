@@ -12,7 +12,10 @@ import {
   getNavigationKind,
   shouldSkipPathNavigation,
 } from './navigation-state'
-import { getNativeBackCallbackDecision } from './native-back-sync'
+import {
+  getNativeBackCallbackDecision,
+  shouldCompleteNativeBackSyncOnVisiblePath,
+} from './native-back-sync'
 import { createDebugLogger } from './debug-log'
 import type {
   NavigationGuard,
@@ -46,7 +49,6 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
   let suppressedNativeBackCallbacks = 0
   let nativeBackSyncInFlight = false
   let nativeBackSyncFromPath: string | null = null
-  let nativeBackSyncTimeoutId: ReturnType<typeof setTimeout> | undefined
   let queuedNativeBackCount = 0
   let skipNextFrameBackNavigation = false
   // Shared guard to prevent circular updates between router and Frame
@@ -298,30 +300,26 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     acquireGuard('native_back_callback')
     log('[NSRouter] native back pop -> router.history.back()')
     router.history.back()
-
-    if (nativeBackSyncTimeoutId) {
-      clearTimeout(nativeBackSyncTimeoutId)
-    }
-
-    // Failsafe: if router state does not settle quickly, unlock and continue.
-    nativeBackSyncTimeoutId = setTimeout(() => {
-      if (!nativeBackSyncInFlight) {
-        return
-      }
-
-      log('[NSRouter] native back sync timeout; forcing in-flight release')
-      nativeBackSyncInFlight = false
-      nativeBackSyncFromPath = null
-      if (guard.lockReason === 'native_back_callback') {
-        releaseGuard()
-      }
-      setTimeout(tryDrainQueuedNativeBack, 0)
-    }, 250)
   }
 
   const reconcileRouterToVisiblePath = (visiblePath: string) => {
     const activePath = router.state.location.pathname
     if (visiblePath === activePath) {
+      // Native visibility has aligned with router path, so any in-flight native
+      // back sync can be deterministically completed from this event.
+      if (shouldCompleteNativeBackSyncOnVisiblePath({
+        inFlight: nativeBackSyncInFlight,
+        visiblePath,
+        activePath,
+      })) {
+        nativeBackSyncInFlight = false
+        nativeBackSyncFromPath = null
+        if (guard.lockReason === 'native_back_callback') {
+          log('[NSRouter] native back sync completed on visible-path alignment')
+          releaseGuard()
+        }
+        setTimeout(tryDrainQueuedNativeBack, 0)
+      }
       return
     }
 
@@ -337,17 +335,42 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     nativeBackSyncFromPath = null
     queuedNativeBackCount = 0
     skipNextFrameBackNavigation = false
-    if (nativeBackSyncTimeoutId) {
-      clearTimeout(nativeBackSyncTimeoutId)
-      nativeBackSyncTimeoutId = undefined
-    }
 
     acquireGuard('native_visible_path_reconcile')
     router.navigate({
       to: visiblePath,
       replace: true,
     } as any)
-    setTimeout(releaseGuard, 0)
+
+    const settlePromise = router.load?.()
+
+    if (settlePromise && typeof settlePromise.then === 'function') {
+      settlePromise
+        .then(() => {
+          log(
+            '[NSRouter] visible-path reconcile settled:',
+            'status=',
+            router.state.status,
+            'path=',
+            router.state.location.pathname,
+          )
+        })
+        .catch((err: any) => {
+          console.error('[NSRouter] visible-path reconcile load rejected:', err)
+        })
+        .finally(() => {
+          if (guard.lockReason === 'native_visible_path_reconcile') {
+            releaseGuard()
+          }
+          setTimeout(tryDrainQueuedNativeBack, 0)
+        })
+      return
+    }
+
+    if (guard.lockReason === 'native_visible_path_reconcile') {
+      releaseGuard()
+    }
+    setTimeout(tryDrainQueuedNativeBack, 0)
   }
 
   const tryDrainQueuedNativeBack = () => {
@@ -392,10 +415,6 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     const cleanupBack = setupBackHandler(router, () => frameRef, guard)
 
     onCleanup(() => {
-      if (nativeBackSyncTimeoutId) {
-        clearTimeout(nativeBackSyncTimeoutId)
-        nativeBackSyncTimeoutId = undefined
-      }
       closeModalFromRouterState()
       unsub()
       cleanupBack()
@@ -424,10 +443,6 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
       ) {
         nativeBackSyncInFlight = false
         nativeBackSyncFromPath = null
-        if (nativeBackSyncTimeoutId) {
-          clearTimeout(nativeBackSyncTimeoutId)
-          nativeBackSyncTimeoutId = undefined
-        }
         if (guard.lockReason === 'native_back_callback') {
           log('[NSRouter] native back callback releasing guard')
           releaseGuard()

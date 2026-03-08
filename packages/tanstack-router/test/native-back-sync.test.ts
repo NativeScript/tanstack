@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getNativeBackCallbackDecision, resetNativeBackSyncScheduled, shouldScheduleNativeBackSync } from '../src/native-back-sync';
+import { getNativeBackCallbackDecision, getNativeBackTimeoutReconcilePath, resetNativeBackSyncScheduled, shouldCompleteNativeBackSyncOnVisiblePath, shouldScheduleNativeBackSync } from '../src/native-back-sync';
 
 describe('native-back-sync helpers', () => {
   describe('getNativeBackCallbackDecision', () => {
@@ -61,6 +61,74 @@ describe('native-back-sync helpers', () => {
   describe('resetNativeBackSyncScheduled', () => {
     it('resets scheduling state to false', () => {
       expect(resetNativeBackSyncScheduled()).toBe(false);
+    });
+  });
+
+  describe('getNativeBackTimeoutReconcilePath', () => {
+    it('returns visible path when router path is stale after timeout', () => {
+      expect(
+        getNativeBackTimeoutReconcilePath({
+          visiblePath: '/',
+          activePath: '/posts/1',
+        }),
+      ).toBe('/');
+    });
+
+    it('returns null when visible path matches active path', () => {
+      expect(
+        getNativeBackTimeoutReconcilePath({
+          visiblePath: '/posts/1',
+          activePath: '/posts/1',
+        }),
+      ).toBeNull();
+    });
+
+    it('returns null for empty or missing visible path', () => {
+      expect(
+        getNativeBackTimeoutReconcilePath({
+          visiblePath: '   ',
+          activePath: '/posts/1',
+        }),
+      ).toBeNull();
+
+      expect(
+        getNativeBackTimeoutReconcilePath({
+          visiblePath: undefined,
+          activePath: '/posts/1',
+        }),
+      ).toBeNull();
+    });
+  });
+
+  describe('shouldCompleteNativeBackSyncOnVisiblePath', () => {
+    it('completes in-flight sync when visible and active paths align', () => {
+      expect(
+        shouldCompleteNativeBackSyncOnVisiblePath({
+          inFlight: true,
+          visiblePath: '/',
+          activePath: '/',
+        }),
+      ).toBe(true);
+    });
+
+    it('does not complete when sync is not in flight', () => {
+      expect(
+        shouldCompleteNativeBackSyncOnVisiblePath({
+          inFlight: false,
+          visiblePath: '/',
+          activePath: '/',
+        }),
+      ).toBe(false);
+    });
+
+    it('does not complete when paths are still mismatched', () => {
+      expect(
+        shouldCompleteNativeBackSyncOnVisiblePath({
+          inFlight: true,
+          visiblePath: '/',
+          activePath: '/posts/1',
+        }),
+      ).toBe(false);
     });
   });
 });

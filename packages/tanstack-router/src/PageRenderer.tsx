@@ -9,6 +9,7 @@ import {
 import { createDebugLogger } from './debug-log'
 import { describeComponentShape, normalizeRenderableComponent } from './component-shape'
 import { shouldUnmountPageOnNavigatingFrom } from './page-lifecycle'
+import { NavigatedData } from '@nativescript/core'
 
 function getErrorMessage(err: unknown): string {
   if (err instanceof Error) {
@@ -40,35 +41,8 @@ export function renderPage(
   const loggedUnexpectedErrors = new Set<string>()
   let dispose: (() => void) | undefined
   let nativeBackSyncScheduled = false
-  let remountTimer: ReturnType<typeof setTimeout> | undefined
-
-  const clearRemountTimer = () => {
-    if (remountTimer) {
-      clearTimeout(remountTimer)
-      remountTimer = undefined
-    }
-  }
 
   const getPagePath = () => (page as any).__nsRouterPath || routePath
-
-  const remountWhenRouterPathSettles = (attempt = 0) => {
-    clearRemountTimer()
-
-    const pagePath = getPagePath()
-    const activePath = router.state.location.pathname
-    const isAligned = activePath === pagePath
-
-    if (isAligned || !onNativeBack) {
-      mount()
-      return
-    }
-
-    if (attempt === 0) {
-      log('[NSRouter] deferring page remount until router path settles:', 'page=', pagePath, 'active=', activePath)
-    }
-
-    remountTimer = setTimeout(() => remountWhenRouterPathSettles(attempt + 1), 0)
-  }
 
   // Reset error boundary when Page comes back from backstack
   page.on('loaded', () => {
@@ -165,13 +139,15 @@ export function renderPage(
   page.on('navigatedTo', () => {
     nativeBackSyncScheduled = resetNativeBackSyncScheduled()
     onVisiblePathChange?.(getPagePath())
-    remountWhenRouterPathSettles()
+    // Deterministic lifecycle handling: once a Page is visible, it must have
+    // an active view tree regardless of router pending/transient state.
+    mount()
     log('[NSRouter] page navigatedTo:', getPagePath())
   })
 
   // Sync router when this page is popped by native UI back controls
   // (iOS ActionBar/UINavigationController back, swipe-back, Android native pop).
-  page.on('navigatingFrom', (args: any) => {
+  page.on('navigatingFrom', (args: NavigatedData) => {
     const isBack = !!args?.isBackNavigation
 
     // Tear down hidden page trees on both forward/back transitions.
@@ -204,7 +180,6 @@ export function renderPage(
 
   // Clean up SolidJS tree when native Page is destroyed
   page.on('disposeNativeView', () => {
-    clearRemountTimer()
     nativeBackSyncScheduled = resetNativeBackSyncScheduled()
     unmount()
   })
