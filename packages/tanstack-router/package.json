@@ -1,6 +1,6 @@
 {
   "name": "@nativescript/tanstack-router",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "TanStack Router for NativeScript",
   "main": "index.cjs",
   "module": "index.mjs",
@@ -10,6 +10,7 @@
     "index.mjs",
     "index.d.ts",
     "solid",
+    "nativescript.vite.mjs",
     "nativescript.webpack.js",
     "solid-web-shim.js",
     "solid-js-jsx-runtime-shim.js",
