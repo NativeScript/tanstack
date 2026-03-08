@@ -1,6 +1,6 @@
 {
   "name": "@nativescript/tanstack-router",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "TanStack Router for NativeScript",
   "main": "index.cjs",
   "module": "index.mjs",

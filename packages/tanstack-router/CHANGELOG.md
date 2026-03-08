@@ -1,3 +1,13 @@
+## 0.0.3 (2026-03-08)
+
+### 🚀 Features
+
+- improve route type safety ([8bb05ba](https://github.com/NativeScript/tanstack/commit/8bb05ba))
+
+### ❤️ Thank You
+
+- Nathan Walker
+
 ## 0.0.2 (2026-03-08)
 
 ### 🚀 Features
