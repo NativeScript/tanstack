@@ -1,3 +1,13 @@
+## 0.0.4 (2026-03-09)
+
+### 🩹 Fixes
+
+- android modal handling ([361581f](https://github.com/NativeScript/tanstack/commit/361581f))
+
+### ❤️ Thank You
+
+- Nathan Walker
+
 ## 0.0.3 (2026-03-08)
 
 ### 🚀 Features
