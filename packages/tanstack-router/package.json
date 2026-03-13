@@ -1,6 +1,6 @@
 {
   "name": "@nativescript/tanstack-router",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "TanStack Router for NativeScript",
   "main": "index.cjs",
   "module": "index.mjs",
@@ -69,6 +69,7 @@
   "homepage": "https://github.com/NativeScript/tanstack",
   "readmeFilename": "README.md",
   "dependencies": {
+    "@tanstack/router-plugin": "^1.166.0",
     "@tanstack/history": "^1.100.0",
     "@tanstack/solid-router": "^1.166.0"
   },

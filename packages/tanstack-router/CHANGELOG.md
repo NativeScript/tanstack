@@ -1,3 +1,13 @@
+## 0.0.5 (2026-03-13)
+
+### 🚀 Features
+
+- support file based routes ([55e141e](https://github.com/NativeScript/tanstack/commit/55e141e))
+
+### ❤️ Thank You
+
+- Nathan Walker
+
 ## 0.0.4 (2026-03-09)
 
 ### 🩹 Fixes
