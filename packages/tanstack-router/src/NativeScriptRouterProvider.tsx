@@ -1,5 +1,4 @@
-import { createEffect, onMount, onCleanup, startTransition, useTransition, untrack } from 'solid-js';
-import { useStore } from '@tanstack/solid-store';
+import { batch, createEffect, createSignal, onMount, onCleanup, untrack } from 'solid-js';
 import type { AnyRouter } from '@tanstack/solid-router';
 import { Color, ShowModalOptions, Utils } from '@nativescript/core';
 import { renderPage } from './PageRenderer';
@@ -23,6 +22,17 @@ export interface NativeScriptRouterProviderProps {
 
 export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProps) {
   const router = props.router;
+
+  // Ensure router stores are initialized — mirrors RouterContextProvider behavior.
+  // Without this call, router.stores may be undefined when Transitioner logic
+  // and useRouterState try to access it.
+  router.update({
+    ...router.options,
+    context: {
+      ...router.options.context,
+    },
+  });
+
   const log = createDebugLogger(props.debug);
   let frameRef: any;
   let prevIndex = -1;
@@ -63,16 +73,54 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     }, 250);
   };
 
-  // Set up Solid transitions on the router (mirrors Transitioner.tsx)
-  const [, startSolidTransition] = useTransition();
+  // ── Simplified state tracking for NativeScript ──
+  // The standard solid-router uses Transitioner inside a <Suspense> boundary with
+  // useTransition/startTransition. NativeScript uses Frame-based page navigation
+  // without Suspense, so we take a simpler approach:
+  // 1. Execute transitions immediately (no useTransition)
+  // 2. Use router.subscribe() events + a Solid signal to drive reactive effects
+  // 3. Manually transition status from pending→idle after load completes
   router.startTransition = (fn: () => void) => {
-    startTransition(() => {
-      startSolidTransition(fn);
-    });
+    fn();
   };
 
-  // Reactive selector: track match IDs to detect route changes
-  const navigationSignal = useStore(router.__store, (s: any) => getNavigationSignalFromRouterState(s));
+  // Create a Solid signal that updates whenever the router state changes.
+  // This bypasses the __store reactive chain which depends on Suspense context.
+  const [navigationSignal, setNavigationSignal] = createSignal(
+    getNavigationSignalFromRouterState(router.state) + ':' + (router.state.location?.pathname || ''),
+  );
+
+  // Update navigation signal from router state. Includes pathname to detect
+  // child route changes (e.g., /virtual → /virtual/inspector) where match IDs
+  // may not update immediately through the __store memo chain.
+  const updateSignal = () => {
+    const state = router.state;
+    const pathname = state.location?.pathname || '';
+    const base = getNavigationSignalFromRouterState(state);
+    // Append pathname to ensure child route navigations are detected
+    const next = `${base}:${pathname}`;
+    setNavigationSignal(next);
+  };
+
+  // The router emits 'onResolved' when a navigation completes, but we also need
+  // to detect intermediate states (pending, loading). Use a combination of
+  // router.subscribe + manual status management.
+  const unsubResolved = router.subscribe('onResolved' as any, () => {
+    // Ensure status is set to idle when navigation resolves
+    batch(() => {
+      (router as any).stores.status.setState(() => 'idle');
+      (router as any).stores.resolvedLocation.setState(() => (router as any).stores.location.state);
+    });
+    updateSignal();
+  });
+
+  const unsubLoad = router.subscribe('onLoad' as any, () => {
+    updateSignal();
+  });
+
+  const unsubBeforeLoad = router.subscribe('onBeforeRouteMount' as any, () => {
+    updateSignal();
+  });
 
   const closeModalFromRouterState = () => {
     if (!activeModalPage) {
@@ -398,26 +446,41 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     runNativeBackSync();
   };
 
+  // ── Mount lifecycle (mirrors Transitioner.onMount) ──
   onMount(() => {
-    // Subscribe to history changes and trigger router loading (like Transitioner)
-    const unsub = router.history.subscribe(router.load);
+    // Subscribe to history changes and update navigation signal after each load.
+    // The standard Transitioner emits onResolved/onLoad events, but since we
+    // don't render it, we hook into history changes directly.
+    const unsub = router.history.subscribe(() => {
+      log('[NSRouter] history.subscribe fired, pathname:', router.state.location.pathname);
+      const loadPromise = router.load();
+      if (loadPromise && typeof loadPromise.then === 'function') {
+        loadPromise.then(() => {
+          // Ensure status transitions to idle after navigation completes
+          batch(() => {
+            (router as any).stores.status.setState(() => 'idle');
+            (router as any).stores.resolvedLocation.setState(() => (router as any).stores.location.state);
+          });
+          log('[NSRouter] history load resolved, updating signal. pathname:', router.state.location.pathname, 'matches:', router.state.matches.length);
+          updateSignal();
+        }).catch((err: any) => {
+          log('[NSRouter] history load error:', err?.message || err);
+        });
+      } else {
+        // router.load() returned synchronously (undefined/void)
+        log('[NSRouter] history load sync, updating signal. pathname:', router.state.location.pathname);
+        batch(() => {
+          (router as any).stores.status.setState(() => 'idle');
+          (router as any).stores.resolvedLocation.setState(() => (router as any).stores.location.state);
+        });
+        updateSignal();
+      }
+    });
 
     log('[NSRouter] onMount: calling router.load()');
     log('[NSRouter] latestLocation:', JSON.stringify(router.latestLocation?.pathname));
     log('[NSRouter] routeTree:', !!router.routeTree);
     log('[NSRouter] routesById keys:', Object.keys((router as any).routesById || {}));
-
-    // Initial load
-    const loadPromise = router.load();
-    if (loadPromise && typeof loadPromise.then === 'function') {
-      loadPromise
-        .then(() => {
-          log('[NSRouter] load resolved. status:', router.state.status, 'matches:', router.state.matches.length, 'pending:', router.state.pendingMatches?.length);
-        })
-        .catch((err: any) => {
-          console.error('[NSRouter] load rejected:', err);
-        });
-    }
 
     // Set up back button handling
     const cleanupBack = setupBackHandler(router, () => frameRef, guard);
@@ -426,8 +489,29 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
       closeModalFromRouterState();
       unsub();
       cleanupBack();
+      unsubResolved();
+      unsubLoad();
+      unsubBeforeLoad();
     });
   });
+
+  // Initial load — trigger immediately, set idle + update signal when done
+  {
+    const tryLoad = async () => {
+      try {
+        await router.load();
+        log('[NSRouter] load resolved. status:', router.state.status, 'matches:', router.state.matches.length, 'pending:', router.state.pendingMatches?.length);
+        batch(() => {
+          (router as any).stores.status.setState(() => 'idle');
+          (router as any).stores.resolvedLocation.setState(() => (router as any).stores.location.state);
+        });
+        updateSignal();
+      } catch (err: any) {
+        console.error('[NSRouter] load rejected:', err);
+      }
+    };
+    tryLoad();
+  }
 
   // React to match changes and navigate the Frame
   createEffect(() => {
@@ -532,11 +616,39 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
       }
 
       // Forward or replace navigation
-      const leafMatch = matches[matches.length - 1];
+      let leafMatch = matches[matches.length - 1];
 
+      // If the leaf match's routeId doesn't match the current pathname, the matches
+      // may be stale (common for child route swaps within a layout, or parameterized
+      // routes like /posts/$postId where the leaf shows /posts but pathname is /posts/2).
+      // Find the correct route by searching all routes for one that matches the pathname.
       if (!doesRouteIdMatchPathname(leafMatch.routeId, curPathname)) {
-        log('[NSRouter] deferring Frame navigation due to pending match/path mismatch:', 'routeId=', leafMatch.routeId, 'pathname=', curPathname, 'status=', state.status);
-        return;
+        const routesById = (router as any).routesById || {};
+        let resolvedRouteId: string | null = null;
+
+        // Search all routes for one whose ID pattern matches the current pathname
+        for (const routeId of Object.keys(routesById)) {
+          if (routeId === '__root__') continue;
+          if (doesRouteIdMatchPathname(routeId, curPathname)) {
+            // Prefer the most specific match (longest routeId)
+            if (!resolvedRouteId || routeId.length > resolvedRouteId.length) {
+              resolvedRouteId = routeId;
+            }
+          }
+        }
+
+        if (resolvedRouteId) {
+          log('[NSRouter] match/path mismatch resolved:', leafMatch.routeId, '->', resolvedRouteId, 'for pathname:', curPathname);
+          leafMatch = { ...leafMatch, routeId: resolvedRouteId };
+          // Schedule a delayed signal update so the match stores settle and
+          // useParams/useMatch can read correct data when the component renders.
+          setTimeout(() => updateSignal(), 16);
+        } else {
+          log('[NSRouter] deferring Frame navigation due to pending match/path mismatch:', 'routeId=', leafMatch.routeId, 'pathname=', curPathname, 'status=', state.status);
+          // Schedule retry — stores may settle on next tick
+          setTimeout(() => updateSignal(), 16);
+          return;
+        }
       }
 
       const route = (router as any).routesById[leafMatch.routeId];
