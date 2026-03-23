@@ -1,3 +1,13 @@
+## 0.0.8 (2026-03-23)
+
+### 🩹 Fixes
+
+- compat with latest 1.168+ tanstack ([5093a18](https://github.com/NativeScript/tanstack/commit/5093a18))
+
+### ❤️ Thank You
+
+- Nathan Walker
+
 ## 0.0.5 (2026-03-13)
 
 ### 🚀 Features
