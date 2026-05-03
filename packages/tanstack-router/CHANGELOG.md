@@ -1,3 +1,9 @@
+## 0.1.2 (2026-05-03)
+
+### 🧪 Tests
+
+- Add `transitioner-equivalent.test.ts`, `ns-render-via-shim.test.ts`, and `router-render.test.ts` covering the pending→idle settle path and the universal renderer + shim end-to-end render through `getRouteApi('/').useLoaderData()` against `@tanstack/solid-router` `1.169.x`.
+
 ## 0.1.1 (2026-05-03)
 
 ### 🩹 Fixes
