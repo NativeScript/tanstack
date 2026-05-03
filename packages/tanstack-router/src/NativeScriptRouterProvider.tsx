@@ -1,4 +1,4 @@
-import { batch, createEffect, createSignal, onMount, onCleanup, untrack } from 'solid-js';
+import { batch, createEffect, createMemo, createSignal, onMount, onCleanup, untrack } from 'solid-js';
 import type { AnyRouter } from '@tanstack/solid-router';
 import { Color, ShowModalOptions, Utils } from '@nativescript/core';
 import { renderPage } from './PageRenderer';
@@ -74,12 +74,19 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
   };
 
   // ── Simplified state tracking for NativeScript ──
-  // The standard solid-router uses Transitioner inside a <Suspense> boundary with
-  // useTransition/startTransition. NativeScript uses Frame-based page navigation
-  // without Suspense, so we take a simpler approach:
-  // 1. Execute transitions immediately (no useTransition)
-  // 2. Use router.subscribe() events + a Solid signal to drive reactive effects
-  // 3. Manually transition status from pending→idle after load completes
+  // The standard solid-router renders <Transitioner /> inside <Matches>. That
+  // component (a) calls `router.startTransition = Solid.startTransition` to
+  // wire concurrent rendering, (b) subscribes to history changes and calls
+  // `router.load()`, and (c) watches `isLoading || hasPending` and, when both
+  // clear, batches `status.set('idle')` + `resolvedLocation.set(location)` and
+  // emits the `onResolved` event.
+  //
+  // NativeScript renders Pages via Frame.navigate() instead of mounting
+  // <Matches> in a single Solid tree, so <Transitioner /> is never on screen.
+  // We reproduce its responsibilities inline below:
+  //  1. Synchronous startTransition (no Suspense / concurrent rendering needed)
+  //  2. History subscription + router.load() — handled in onMount
+  //  3. Reactive effect that flips status pending→idle when the router settles
   router.startTransition = (fn: () => void) => {
     fn();
   };
@@ -102,16 +109,39 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     setNavigationSignal(next);
   };
 
-  // The router emits 'onResolved' when a navigation completes, but we also need
-  // to detect intermediate states (pending, loading). Use a combination of
-  // router.subscribe + manual status management.
-  const unsubResolved = router.subscribe('onResolved' as any, () => {
-    // Ensure status is set to idle when navigation resolves
-    batch(() => {
-      (router as any).stores.status.set(() => 'idle');
-      (router as any).stores.resolvedLocation.set(() => (router as any).stores.location.get());
-    });
-    updateSignal();
+  // Transitioner-equivalent: drive `status` to `idle` and update `resolvedLocation`
+  // whenever the router settles out of any pending state. Mirrors the
+  // pending→settled createRenderEffect inside @tanstack/solid-router's
+  // `<Transitioner />` (which is never mounted in NS because we render Pages
+  // through Frame.navigate() instead of inside a single Solid <Matches> tree).
+  // Uses Solid's accumulator-style effect so transitions never get lost between
+  // module load time and the first effect tick.
+  const isAnyPending = createMemo(() => {
+    const stores = (router as any).stores;
+    if (!stores) return false;
+    return Boolean(stores.isLoading?.get?.() ?? false) || Boolean(stores.hasPending?.get?.() ?? false);
+  });
+  createEffect((prevIsAnyPending: boolean = false) => {
+    const cur = isAnyPending();
+    if (prevIsAnyPending && !cur) {
+      const stores = (router as any).stores;
+      batch(() => {
+        stores.status?.set?.('idle');
+        if (stores.resolvedLocation && stores.location) {
+          stores.resolvedLocation.set(stores.location.get());
+        }
+      });
+      // Emit onResolved so subscribers (e.g. devtools, scroll restoration)
+      // observe the navigation completion the same way they do under the
+      // standard <Transitioner />.
+      try {
+        router.emit?.({ type: 'onResolved' } as any);
+      } catch {
+        // ignore — onResolved payload is purely informational for our consumers
+      }
+      updateSignal();
+    }
+    return cur;
   });
 
   const unsubLoad = router.subscribe('onLoad' as any, () => {
@@ -448,32 +478,17 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
 
   // ── Mount lifecycle (mirrors Transitioner.onMount) ──
   onMount(() => {
-    // Subscribe to history changes and update navigation signal after each load.
-    // The standard Transitioner emits onResolved/onLoad events, but since we
-    // don't render it, we hook into history changes directly.
+    // Subscribe to history changes and trigger router.load(). The
+    // Transitioner-equivalent reactive effect above handles status transitions
+    // (pending→idle) and signal updates once isLoading + hasPending settle, so
+    // we no longer need to poke `router.stores.status` after each load.
     const unsub = router.history.subscribe(() => {
       log('[NSRouter] history.subscribe fired, pathname:', router.state.location.pathname);
       const loadPromise = router.load();
       if (loadPromise && typeof loadPromise.then === 'function') {
-        loadPromise.then(() => {
-          // Ensure status transitions to idle after navigation completes
-          batch(() => {
-            (router as any).stores.status.set(() => 'idle');
-            (router as any).stores.resolvedLocation.set(() => (router as any).stores.location.get());
-          });
-          log('[NSRouter] history load resolved, updating signal. pathname:', router.state.location.pathname, 'matches:', router.state.matches.length);
-          updateSignal();
-        }).catch((err: any) => {
+        loadPromise.catch((err: any) => {
           log('[NSRouter] history load error:', err?.message || err);
         });
-      } else {
-        // router.load() returned synchronously (undefined/void)
-        log('[NSRouter] history load sync, updating signal. pathname:', router.state.location.pathname);
-        batch(() => {
-          (router as any).stores.status.set(() => 'idle');
-          (router as any).stores.resolvedLocation.set(() => (router as any).stores.location.get());
-        });
-        updateSignal();
       }
     });
 
@@ -489,23 +504,18 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
       closeModalFromRouterState();
       unsub();
       cleanupBack();
-      unsubResolved();
       unsubLoad();
       unsubBeforeLoad();
     });
   });
 
-  // Initial load — trigger immediately, set idle + update signal when done
+  // Initial load — trigger immediately. The Transitioner-equivalent effect
+  // above flips status to 'idle' and updates the signal when the load settles.
   {
     const tryLoad = async () => {
       try {
         await router.load();
-        log('[NSRouter] load resolved. status:', router.state.status, 'matches:', router.state.matches.length, 'pending:', router.state.pendingMatches?.length);
-        batch(() => {
-          (router as any).stores.status.set(() => 'idle');
-          (router as any).stores.resolvedLocation.set(() => (router as any).stores.location.get());
-        });
-        updateSignal();
+        log('[NSRouter] load resolved. status:', router.state.status, 'matches:', router.state.matches.length);
       } catch (err: any) {
         console.error('[NSRouter] load rejected:', err);
       }

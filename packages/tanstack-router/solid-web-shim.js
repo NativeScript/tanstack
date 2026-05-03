@@ -1,5 +1,7 @@
 // Shim for solid-js/web in NativeScript.
 // Re-exports core solid-js plus web-specific symbols used by router internals.
+import { createMemo } from 'solid-js';
+
 export * from 'solid-js';
 
 export const isServer = false;
@@ -20,8 +22,17 @@ export function insert() {}
 export function effect() {}
 export function style() {}
 export function classList() {}
+
+// IMPORTANT: must mirror solid-js/web's `memo` (which is `fn => createMemo(() => fn())`)
+// rather than returning `fn` raw. The babel-emitted JSX from @tanstack/solid-router
+// uses `memo(...)` wrappers around children to scope reactive subscriptions; in 1.168+
+// the router migrated to native Solid signals and those nested memo wrappers are now
+// load-bearing for `getRouteMatchStore` and `nearestMatchContext` lookups in `<Match>`
+// and `<Matches>`. Returning `fn` raw here causes children that read those stores to
+// run in the wrong owner, so `useMatch` cannot resolve the active match and throws
+// "Could not find an active match" inside `createEffect`, blanking the page.
 export function memo(fn) {
-  return fn;
+  return createMemo(() => fn());
 }
 export function template() {
   return function () {};
