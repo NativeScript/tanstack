@@ -20,8 +20,15 @@ export function createNativeScriptRouter<TRouteTree extends AnyRoute>(
   },
 ) {
   const { initialPath, ...routerOpts } = opts;
-  return createRouter<TRouteTree>({
+  const router = createRouter<TRouteTree>({
     ...(routerOpts as RouterOptions<TRouteTree>),
     history: createNativeScriptHistory({ initialPath }),
   });
+  // Dev-only: expose router for HMR client to patch route loaders
+  // when non-component utility modules change (standard pattern:
+  // React uses __REACT_DEVTOOLS_GLOBAL_HOOK__, Vue uses __VUE_HMR_RUNTIME__).
+  try {
+    (globalThis as any).__ns_router = router;
+  } catch {}
+  return router;
 }

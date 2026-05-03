@@ -42,7 +42,6 @@ function getRouterPlugins() {
     // with other frameworks, we can embed different configs
     target: 'solid',
     autoCodeSplitting: false,
-    verboseFileRoutes: false,
     enableRouteGeneration: true,
   });
 
