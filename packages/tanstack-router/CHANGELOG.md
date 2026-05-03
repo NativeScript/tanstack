@@ -1,3 +1,17 @@
+## 0.1.0 (2026-05-03)
+
+### 🚀 Features
+
+- tanstack router updates ([#1](https://github.com/NativeScript/tanstack/pull/1))
+
+### 🩹 Fixes
+
+- publishing format for better compat across non-hmr and hmr ([9d69f20](https://github.com/NativeScript/tanstack/commit/9d69f20))
+
+### ❤️ Thank You
+
+- Nathan Walker
+
 ## 0.0.8 (2026-03-23)
 
 ### 🩹 Fixes
