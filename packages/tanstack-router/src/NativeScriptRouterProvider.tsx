@@ -108,8 +108,8 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
   const unsubResolved = router.subscribe('onResolved' as any, () => {
     // Ensure status is set to idle when navigation resolves
     batch(() => {
-      (router as any).stores.status.setState(() => 'idle');
-      (router as any).stores.resolvedLocation.setState(() => (router as any).stores.location.state);
+      (router as any).stores.status.set(() => 'idle');
+      (router as any).stores.resolvedLocation.set(() => (router as any).stores.location.get());
     });
     updateSignal();
   });
@@ -458,8 +458,8 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
         loadPromise.then(() => {
           // Ensure status transitions to idle after navigation completes
           batch(() => {
-            (router as any).stores.status.setState(() => 'idle');
-            (router as any).stores.resolvedLocation.setState(() => (router as any).stores.location.state);
+            (router as any).stores.status.set(() => 'idle');
+            (router as any).stores.resolvedLocation.set(() => (router as any).stores.location.get());
           });
           log('[NSRouter] history load resolved, updating signal. pathname:', router.state.location.pathname, 'matches:', router.state.matches.length);
           updateSignal();
@@ -470,8 +470,8 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
         // router.load() returned synchronously (undefined/void)
         log('[NSRouter] history load sync, updating signal. pathname:', router.state.location.pathname);
         batch(() => {
-          (router as any).stores.status.setState(() => 'idle');
-          (router as any).stores.resolvedLocation.setState(() => (router as any).stores.location.state);
+          (router as any).stores.status.set(() => 'idle');
+          (router as any).stores.resolvedLocation.set(() => (router as any).stores.location.get());
         });
         updateSignal();
       }
@@ -502,8 +502,8 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
         await router.load();
         log('[NSRouter] load resolved. status:', router.state.status, 'matches:', router.state.matches.length, 'pending:', router.state.pendingMatches?.length);
         batch(() => {
-          (router as any).stores.status.setState(() => 'idle');
-          (router as any).stores.resolvedLocation.setState(() => (router as any).stores.location.state);
+          (router as any).stores.status.set(() => 'idle');
+          (router as any).stores.resolvedLocation.set(() => (router as any).stores.location.get());
         });
         updateSignal();
       } catch (err: any) {
