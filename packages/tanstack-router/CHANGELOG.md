@@ -1,3 +1,14 @@
+## 0.1.1 (2026-05-03)
+
+### 🩹 Fixes
+
+- Fix `solid-web-shim.js` `memo()` to wrap in `createMemo` (parity with `solid-js/web`).
+- Replace manual `router.stores.status.set('idle')` and `resolvedLocation.set(...)` handling in `NativeScriptRouterProvider` with a Transitioner-equivalent `createEffect` that watches `isLoading || hasPending` and settles the router via `batch(...)` exactly like `@tanstack/solid-router`'s internal `<Transitioner />`.
+
+### ❤️ Thank You
+
+- Nathan Walker
+
 ## 0.1.0 (2026-05-03)
 
 ### 🚀 Features
