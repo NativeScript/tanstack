@@ -12,6 +12,14 @@ import { normalizeRenderableComponent } from '../component-shape';
 // Shell / non-route edits are handled by the app-runtime (`startReactApp`), which
 // re-imports the app entry and re-renders the whole tree; this module deliberately
 // ignores them.
+//
+// This works in-place (no restart) PROVIDED the dev server purges its transform
+// caches BEFORE broadcasting the delta — otherwise the client's re-import here races
+// the server and re-fetches the previous save's transform ("one save behind"). That
+// server-side contract lives in `@nativescript/vite`'s react server strategy
+// (`deferDeltaBroadcast: true` + a cache-purging `handleHotUpdate`, mirroring Solid).
+// Without it the device returns the BOOT-evaluated module on re-import; with it the
+// re-import evaluates fresh. The runtime itself re-evaluates fine on eviction.
 
 export interface ReactHmrRemountOptions {
   router: AnyRouter;
@@ -111,23 +119,17 @@ const SCRIPT_EXT = /\.(?:tsx|ts|jsx|js|mjs)$/i;
 // Monotonic per-save counter for cache-bust tags (see reimportRouteModule).
 let importNonce = 0;
 
-// Re-import a changed route file fresh (evicting its cached module first so any
-// changed in-graph dependency is re-evaluated too), returning its module
-// namespace (with the freshly-built `Route`). Returns null if it can't load.
+// Re-import a changed route file and return its module namespace (with the freshly
+// built `Route`). Returns null if it can't load.
+//
+// Evicts the route's cached module via `__nsInvalidateModules` then re-imports it
+// through a unique `__ns_hmr__/<tag>/…?t=<tag>` URL (the tag is `Date.now()_<nonce>`,
+// unique per save). On runtimes that honour the eviction this yields fresh code; see
+// the file header for the known NS 9.1.0-alpha limitation where re-evaluation is not
+// guaranteed.
 async function reimportRouteModule(origin: string, changedIds: string[], fileId: string): Promise<any> {
   const spec = fileId.startsWith('/') ? fileId : '/' + fileId;
   const canonical = spec.replace(SCRIPT_EXT, '');
-  // Cache-bust exactly as the proven solid app-runtime does (its
-  // `installHmrRemount`), since both target the SAME native runtime:
-  //   1. EVICT every URL form the module may be cached under (ext-less canonical,
-  //      the original spec, and each script-extension variant) via
-  //      `__nsInvalidateModules`, so V8 drops it from the module registry.
-  //   2. RE-IMPORT through a `__ns_hmr__/<tag>/…?t=<tag>` URL whose tag is
-  //      `Date.now()_<nonce>` — UNIQUE PER SAVE. This is the crux: a repeated
-  //      tag hits the dev server's per-URL transform cache and serves the
-  //      PREVIOUS save's output ("one edit behind"); a unique tag forces a fresh
-  //      transform AND (after the runtime canonicalizes the tag away to the
-  //      evicted canonical) a fresh V8 evaluation.
   const evict = new Set<string>();
   for (const raw of [spec, ...changedIds]) {
     if (!raw) continue;
@@ -139,8 +141,7 @@ async function reimportRouteModule(origin: string, changedIds: string[], fileId:
     if (s !== c) evict.add(origin + '/ns/m' + s);
     for (const ext of ['.tsx', '.ts', '.jsx', '.js']) evict.add(origin + '/ns/m' + c + ext);
   }
-  const g = globalThis as any;
-  const invalidate = g.__nsInvalidateModules;
+  const invalidate = (globalThis as any).__nsInvalidateModules;
   if (typeof invalidate === 'function') {
     try {
       invalidate(Array.from(evict));
@@ -174,13 +175,13 @@ export function subscribeReactHmrRemount(opts: ReactHmrRemountOptions): () => vo
   let running = false;
   const onUpdate = async (payload: NsHmrUpdatePayload) => {
     if (running) return;
-    // Only react to DELTA updates (actual file edits). The HMR client also fires
-    // this hook with `type: 'full-graph'` on boot and on reconnect/resync, where
-    // `changedIds` lists EVERY module in the graph — including all route files.
-    // Treating that as "every route changed" would remount the just-mounted page
-    // on boot, churning its <actionitem>s; the native bar buttons hold only a
-    // WeakRef to each item, so the originals get GC'd and taps silently no-op.
-    // Real edits always arrive as 'delta', so restrict to that.
+    // Only act on DELTA updates (real file edits). The HMR client also fires this
+    // hook with `type: 'full-graph'` on boot and on reconnect/resync, where
+    // `changedIds` lists EVERY module (incl. all route files). Treating that as
+    // "every route changed" would remount the just-mounted page on boot, churning
+    // its <actionitem>s; the native bar buttons hold only a WeakRef to each item, so
+    // the originals get GC'd and taps silently no-op. Real edits always arrive as
+    // 'delta', so restrict to that.
     if (payload?.type && payload.type !== 'delta') {
       log('[NSRouter][hmr] ignoring non-delta update', payload.type);
       return;
