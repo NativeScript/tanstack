@@ -1,6 +1,6 @@
 {
   "name": "@nativescript/tanstack-router",
-  "version": "0.1.2",
+  "version": "0.1.5",
   "description": "TanStack Router for NativeScript",
   "main": "index.cjs",
   "types": "index.d.ts",
@@ -9,6 +9,7 @@
     "index.mjs",
     "index.d.ts",
     "solid",
+    "react",
     "nativescript.vite.mjs",
     "nativescript.webpack.js",
     "solid-web-shim.js",
@@ -28,6 +29,12 @@
       "import": "./solid/index.mjs",
       "require": "./solid/index.cjs",
       "default": "./solid/index.mjs"
+    },
+    "./react": {
+      "types": "./react/index.d.ts",
+      "import": "./react/index.mjs",
+      "require": "./react/index.cjs",
+      "default": "./react/index.mjs"
     },
     "./package.json": "./package.json"
   },
@@ -70,16 +77,34 @@
   "dependencies": {
     "@tanstack/router-plugin": "~1.167.0",
     "@tanstack/history": "~1.161.0",
-    "@tanstack/solid-router": "~1.169.0"
+    "@tanstack/solid-router": "~1.169.0",
+    "@tanstack/react-router": "~1.169.0"
   },
   "peerDependencies": {
     "@nativescript-community/solid-js": ">=0.1.0",
+    "@nativescript-community/react": ">=0.1.0",
     "@nativescript/core": ">=9.0.0",
-    "solid-js": ">=1.9.0"
+    "solid-js": ">=1.9.0",
+    "react": ">=19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@nativescript-community/solid-js": {
+      "optional": true
+    },
+    "@nativescript-community/react": {
+      "optional": true
+    },
+    "solid-js": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "tsup": "^8.3.5",
     "typescript": "~5.9.0",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.5",
+    "@types/react": "^19.0.0"
   }
 }
