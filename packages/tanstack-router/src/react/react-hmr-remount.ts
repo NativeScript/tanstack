@@ -174,6 +174,17 @@ export function subscribeReactHmrRemount(opts: ReactHmrRemountOptions): () => vo
   let running = false;
   const onUpdate = async (payload: NsHmrUpdatePayload) => {
     if (running) return;
+    // Only react to DELTA updates (actual file edits). The HMR client also fires
+    // this hook with `type: 'full-graph'` on boot and on reconnect/resync, where
+    // `changedIds` lists EVERY module in the graph — including all route files.
+    // Treating that as "every route changed" would remount the just-mounted page
+    // on boot, churning its <actionitem>s; the native bar buttons hold only a
+    // WeakRef to each item, so the originals get GC'd and taps silently no-op.
+    // Real edits always arrive as 'delta', so restrict to that.
+    if (payload?.type && payload.type !== 'delta') {
+      log('[NSRouter][hmr] ignoring non-delta update', payload.type);
+      return;
+    }
     const changed = (payload?.changedIds || []).filter((id) => typeof id === 'string');
     const routeFiles = changed.filter((id) => ROUTE_FILE_RE.test(id) && !ROOT_FILE_RE.test(id));
     if (!routeFiles.length) {
