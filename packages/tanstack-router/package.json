@@ -1,6 +1,6 @@
 {
   "name": "@nativescript/tanstack-router",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "TanStack Router for NativeScript",
   "main": "index.cjs",
   "types": "index.d.ts",
@@ -75,17 +75,17 @@
   "homepage": "https://github.com/NativeScript/tanstack",
   "readmeFilename": "README.md",
   "dependencies": {
-    "@tanstack/router-plugin": "~1.167.0",
-    "@tanstack/history": "~1.161.0",
-    "@tanstack/solid-router": "~1.169.0",
-    "@tanstack/react-router": "~1.169.0"
+    "@tanstack/router-plugin": "~1.167.0"
   },
   "peerDependencies": {
     "@nativescript-community/solid-js": ">=0.1.0",
     "@nativescript-community/react": ">=0.1.0",
     "@nativescript/core": ">=9.0.0",
     "solid-js": ">=1.9.0",
-    "react": ">=19.0.0"
+    "react": ">=19.0.0",
+    "@tanstack/solid-router": ">=1.169.0",
+    "@tanstack/react-router": ">=1.169.0",
+    "@tanstack/history": ">=1.161.0"
   },
   "peerDependenciesMeta": {
     "@nativescript-community/solid-js": {
@@ -99,12 +99,22 @@
     },
     "react": {
       "optional": true
+    },
+    "@tanstack/solid-router": {
+      "optional": true
+    },
+    "@tanstack/react-router": {
+      "optional": true
     }
   },
   "devDependencies": {
     "tsup": "^8.3.5",
     "typescript": "~5.9.0",
     "vitest": "^4.1.5",
-    "@types/react": "^19.0.0"
+    "@types/react": "^19.0.0",
+    "@tanstack/solid-router": "~1.169.0",
+    "@tanstack/react-router": "~1.169.0",
+    "@tanstack/history": "~1.161.0",
+    "@tanstack/router-core": "~1.169.0"
   }
 }
