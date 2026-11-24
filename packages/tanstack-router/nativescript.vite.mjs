@@ -87,8 +87,18 @@ export default () => ({
     alias: {
       // Keep Vite behavior aligned with nativescript.webpack.js integration.
       'solid-js/web': solidWebShimPath,
-      'solid-js/jsx-runtime': jsxRuntimeShimPath,
-      'solid-js/jsx-dev-runtime': jsxRuntimeShimPath,
+      // NOTE: do NOT alias `solid-js/jsx-runtime` / `solid-js/jsx-dev-runtime` to a
+      // shim file INSIDE this package. @nativescript/vite (solid flavor) already provides
+      // its own jsx-runtime shim and serves it over HTTP. When this alias pointed at
+      // `./solid-js-jsx-runtime-shim.js` (a subpath of this vendored runtime plugin), the
+      // @nativescript/vite device rewriter collapsed that subpath to the vendor-package
+      // ROOT binding — `jsx = __nsPick("@nativescript/tanstack-router", "jsx")` — and the
+      // root has no `jsx` export, so `jsx` was `undefined`. Every `jsx(...)` call in the
+      // bundled router JSX (e.g. renderPage's `<RouterContextProvider><SafeRouteView/>`)
+      // then threw "jsx is not a function", the route Page never rendered, the Frame stayed
+      // empty, and the app showed a blank screen under HMR. Letting @nativescript/vite's
+      // HTTP-served shim resolve these keeps `jsx` a real function. (The webpack path still
+      // aliases them via nativescript.webpack.js, which has its own shim handling.)
       ...(solidJsHPath
         ? {
             'solid-js/h': solidJsHPath,

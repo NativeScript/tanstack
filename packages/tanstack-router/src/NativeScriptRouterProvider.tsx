@@ -1,4 +1,5 @@
 import { batch, createEffect, createMemo, createSignal, onMount, onCleanup, untrack } from 'solid-js';
+import type { JSX } from 'solid-js';
 import type { AnyRouter } from '@tanstack/solid-router';
 import { Color, ShowModalOptions, Utils } from '@nativescript/core';
 import { renderPage } from './PageRenderer';
@@ -10,6 +11,22 @@ import type { NavigationGuard, NativeScriptModalOptionsResolver, NativeScriptMod
 import { describeComponentShape, normalizeRenderableComponent } from './component-shape';
 import { createNativeScriptRouter } from './router';
 import { getSingleModalPathFromSearch, withSingleModalPath } from './modal-state';
+import { subscribeSolidHmrRemount } from './solid-hmr-remount';
+
+/**
+ * Context passed to {@link NativeScriptRouterProviderProps.actionBar} for the route
+ * whose Page is about to be created.
+ */
+export interface NativeScriptPageActionBarContext {
+  /** Resolved pathname for the page being created (e.g. `"/about"`). */
+  path: string;
+  /** Matched leaf route id. */
+  routeId: string;
+  /** The matched route object (`router.routesById[routeId]`). */
+  route: any;
+  /** The route's `staticData` route option, or `{}` when none was declared. */
+  staticData: Record<string, any>;
+}
 
 export interface NativeScriptRouterProviderProps {
   router: AnyRouter;
@@ -18,6 +35,15 @@ export interface NativeScriptRouterProviderProps {
   transition?: { name?: string; duration?: number; curve?: any };
   debug?: boolean;
   modalOptions?: NativeScriptModalPresentationOptions | NativeScriptModalOptionsResolver;
+  /**
+   * Optional per-page chrome — typically an `<actionbar>` — rendered into each route's
+   * native Page. Return an `<actionbar>` for the matched route and dominative slots it
+   * into `page.actionBar`, so iOS/visionOS show a native back button automatically on
+   * pushed pages; return `null`/`undefined` for no bar. Receives the matched route and
+   * its `staticData`, so titles/items can be derived per route. With this, the app no
+   * longer needs a persistent header above the Frame — each page owns its own bar.
+   */
+  actionBar?: (ctx: NativeScriptPageActionBarContext) => JSX.Element | null | undefined;
 }
 
 export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProps) {
@@ -500,10 +526,32 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     // Set up back button handling
     const cleanupBack = setupBackHandler(router, () => frameRef, guard);
 
+    // ── Solid HMR remount subscription ──
+    // After solid-refresh's inline `patchRegistry` has swapped the proxy's
+    // underlying signal to point at each newly-evaluated component, the
+    // proxy's memo correctly re-evaluates, but in this universal-renderer +
+    // nested-context configuration the page-level renderEffect doesn't
+    // re-fire so the visible Page tree never updates. The NS HMR client
+    // emits a `__ns_solid_hmr_subscribe` completion event after the solid
+    // case finishes; we react by re-mounting the Solid tree of every Page
+    // currently held by the Frame (currentPage + backStack). Re-mounting a
+    // Page disposes its existing render and then runs `render()` again with
+    // the fresh route component pulled from `router.routesById`, so the
+    // user sees the edit without losing their place in the navigation
+    // history.
+    const cleanupHmr = subscribeSolidHmrRemount({
+      router,
+      getFrame: () => frameRef,
+      getActiveModalPage: () => activeModalPage,
+      getActiveModalPath: () => activeModalPath,
+      log,
+    });
+
     onCleanup(() => {
       closeModalFromRouterState();
       unsub();
       cleanupBack();
+      cleanupHmr();
       unsubLoad();
       unsubBeforeLoad();
     });
@@ -676,6 +724,19 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
 
       acquireGuard('router_state_forward_or_replace');
 
+      // Build the per-page chrome thunk (e.g. <actionbar>) for this route, if the
+      // consumer supplied an `actionBar` render fn. Passed into renderPage so it renders
+      // inside the page's own reactive scope and slots into page.actionBar.
+      const pageChrome = props.actionBar
+        ? () =>
+            props.actionBar!({
+              path: curPathname,
+              routeId: leafMatch.routeId,
+              route,
+              staticData: route?.options?.staticData ?? {},
+            })
+        : undefined;
+
       log('[NSRouter] navigating Frame to', curPathname);
       frameRef.navigate({
         create: () =>
@@ -729,6 +790,7 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
             },
             reconcileRouterToVisiblePath,
             props.debug,
+            pageChrome,
           ),
         animated: prevIndex >= 0 ? (props.animated ?? true) : false,
         transition: curTransition ?? props.transition,
