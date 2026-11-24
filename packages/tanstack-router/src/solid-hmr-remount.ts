@@ -54,61 +54,10 @@ function findRouteByFullPath(router: any, fullPath: string): any | null {
   return rootMatch;
 }
 
-// Resolve a solid-refresh proxy chain down to the underlying user component
-// function. solid-refresh wraps every component in a `createProxy`-returned
-// Proxy whose `HMRComp` body returns `createMemo(() => source()(props))`.
-// On HMR, `patchComponent` rewrites M_save_X.signal.value = M_initial.proxy
-// and M_initial.signal.value = newHomeFn, so calling M_save_X.proxy(props)
-// goes M_save_X.proxy → OUTER memo → M_initial.proxy → INNER memo → newHomeFn.
-//
-// The nested memo chain is the source of "every other save applies": each
-// remount's INNER memo subscribes to M_initial.source, and on patch the
-// previous mount's INNER memos (still subscribed because the disposal
-// behavior under universal-renderer + nested context provider isn't fully
-// torn down before the next patch) re-evaluate, producing zombie renders
-// that fight the fresh mount's renderEffect.
-//
-// By unwrapping the proxy chain HERE — before passing to `__ns_remount` —
-// we hand the page the freshly-evaluated user function directly. The page's
-// `createComponent(fn, {})` then runs `fn({})` without any HMRComp memos.
-// Each save's mount is a clean, single-pass render with no signal-based
-// reactivity to share with previous mounts. solid-refresh's patchRegistry
-// still updates the registry (so other consumers that hold the proxy
-// reference also see fresh behavior), but our page mount is decoupled.
-//
-// Each call to source() returns either another solid-refresh proxy
-// (recurse) or the underlying user function (terminate).
-function unwrapSolidRefreshProxy(value: any, log: (...a: any[]) => void): any {
-  if (typeof value !== 'function') return value;
-  let current: any = value;
-  let hops = 0;
-  // The escape hatch is `__$ns_resolveSource` (NOT `__$$ns_resolveSource`):
-  // Vite's plugin patches solid-refresh via String.prototype.replace, where
-  // `$$` in the replacement is a literal `$`. We use a single `$` to avoid
-  // that footgun.
-  while (typeof current?.__$ns_resolveSource === 'function' && hops < 8) {
-    try {
-      const next = current.__$ns_resolveSource();
-      if (typeof next !== 'function' || next === current) break;
-      current = next;
-      hops++;
-    } catch (err) {
-      log('[NSRouter][hmr] unwrapSolidRefreshProxy error at hop', hops, err);
-      break;
-    }
-  }
-  log('[NSRouter][hmr] unwrap', 'name=', (value as any)?.name, 'hops=', hops, 'finalName=', (current as any)?.name);
-  return current;
-}
-
-// Ask a Page (rendered by `PageRenderer.renderPage`) to dispose its current
-// Solid tree and remount with `nextComponent` as the route component. When
-// `nextComponent` is undefined, the page reuses its existing component
-// reference — which for solid-refresh is the proxy, whose internal signal
-// has already been swapped by `patchRegistry` so a fresh render emits the
-// updated body. Pages render through the same RouterContextProvider /
-// ErrorBoundary chain, so a remount picks up the freshest behavior without
-// a Frame.navigate (no backstack churn, no native page transition).
+// Ask a Page (rendered by `PageRenderer.renderPage`) to dispose its Solid tree
+// and remount, with `nextComponent` as the route component when given. Done in
+// place rather than through Frame.navigate (no backstack churn, no native page
+// transition).
 function remountPage(page: any, nextComponent: any, log: (...a: any[]) => void): boolean {
   if (!page || typeof page.__ns_remount !== 'function') {
     return false;
@@ -148,30 +97,15 @@ function collectFramePages(frame: any): any[] {
   return pages;
 }
 
-// Subscribe to the NS HMR client's Solid completion event and trigger a
-// page-level remount whenever a Solid HMR cycle finishes. Returns a cleanup
-// function that unsubscribes from the HMR event stream.
+// The NS HMR client (@nativescript/vite) re-imports changed route files, patches
+// `route.options.component` with the fresh export, then emits a Solid completion
+// event. Every Page held by the Frame (and any open modal) is remounted on that
+// event; mapping changed files to dependent pages is not worth the analysis, and
+// remounting an unaffected page is cheap. Without the HMR client (production,
+// tests) this is a no-op.
 //
-// Strategy: when ANY .tsx file changes (route OR component), every Page held
-// by the Frame is remounted. We don't try to map "which file changed" to
-// "which page depends on it" — `solid-refresh` already swapped the proxy
-// signals globally, so a fresh render of any page automatically picks up the
-// latest component bodies. Remounting unaffected pages is a few-millisecond
-// no-op cost, and avoiding the dependency analysis means HMR Just Works for
-// edits to shared components, hooks, utilities, etc., not just route files.
-//
-// For route-file edits we do prefer to pass the freshly-patched component
-// reference explicitly (rather than reusing the existing proxy ref) so that
-// any deep-equality checks downstream see a different identity.
-//
-// If the NS HMR client is not present (production builds, tests, or older
-// runtimes that don't expose `__ns_solid_hmr_subscribe`), this is a no-op
-// and returns a no-op cleanup.
-// Resolve (or lazily create) the shared globalThis-stored listener Set used
-// by the NS HMR client. By using the same Set the HMR client iterates at
-// emit time, we sidestep module-instance / realm mismatches that can occur
-// in NativeScript when the HMR client and user-app modules load via
-// different paths (HTTP loader vs bundled vendor realm).
+// The listener Set lives on globalThis because the HMR client and app modules
+// can load as separate module instances (HTTP loader vs vendor realm).
 function resolveSharedListenerSet(): Set<(ev: NsSolidHmrEvent) => void> {
   const g = globalThis as any;
   let set = g.__ns_solid_hmr_listener_set as Set<(ev: NsSolidHmrEvent) => void> | undefined;
@@ -205,11 +139,7 @@ export function subscribeSolidHmrRemount(opts: SolidHmrRemountOptions): NsSolidH
         const fullPath = boundaryToFullPath(bid);
         if (!fullPath) continue;
         const route = findRouteByFullPath(router, fullPath);
-        const rawComp = normalizeRenderableComponent(route?.options?.component);
-        // Unwrap the solid-refresh proxy chain so the page mount calls the
-        // freshly-loaded user function directly. See unwrapSolidRefreshProxy
-        // for full reasoning — this is the fix for "every other save applies".
-        const Comp = unwrapSolidRefreshProxy(rawComp, log);
+        const Comp = normalizeRenderableComponent(route?.options?.component);
         if (Comp) routePathToComponent.set(fullPath, Comp);
       }
 

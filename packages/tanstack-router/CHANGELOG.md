@@ -1,3 +1,28 @@
+## 0.2.0 (2026-11-23)
+
+### ⚠️ Breaking Changes
+
+- The Solid flavor now targets Solid 2 only: `solid-js` 2.x, `@solidjs/web` 2.x, `@nativescript-community/solid-js` 2.x and `@tanstack/solid-router` 2.x (`>=2.0.0-rc.12`). Solid 1 is no longer supported.
+- `NativeScriptRouterProviderProps.actionBar` and `Link`'s `children` are typed with Solid 2's `Element` instead of `JSX.Element`.
+- `solid-js-jsx-runtime-shim.js` is no longer shipped; the Solid sources are compiled without JSX.
+- `nativescript.vite.mjs` no longer registers the TanStack router plugin, and `@tanstack/router-plugin` is no longer a dependency. Apps using file-based routes add `tanstackRouter({ target: 'solid', autoCodeSplitting: false })` from `@tanstack/router-plugin/vite` to their own Vite config.
+
+### 🚀 Features
+
+- `solid-web-shim.js` now stands in for `@solidjs/web` (aliased by `nativescript.vite.mjs` and `nativescript.webpack.js`), binding the router's renderer helpers (`insert`, `spread`, `effect`, `memo`, `Dynamic`, ...) to the universal renderer of `@nativescript-community/solid-js`.
+- React flavor updated to `@tanstack/react-router` 1.170 / `@tanstack/router-core` 1.171.
+
+### 🩹 Fixes
+
+- Pages render under `Errored` and keep their views through the native pop animation while their reactivity is torn down.
+- Initial and history-driven loads run outside Solid owners, and Frame navigation runs after (not inside) the navigation effect, as Solid 2 requires.
+- Modal routers no longer replace the app router registered on `globalThis.__ns_router`, so HMR keeps patching the live router after a modal opens.
+- `scrollTo` is stubbed as a no-op global: router-core resets window scroll after every render and threw `ReferenceError: scrollTo is not defined` on each navigation.
+
+### 🔧 Chores
+
+- Drop solid-refresh proxy unwrapping from the HMR remount path; `@nativescript/vite` patches route components directly.
+
 ## 0.1.2 (2026-05-03)
 
 ### 🧪 Tests

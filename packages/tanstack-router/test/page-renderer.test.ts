@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const renderSpy = vi.fn<(fn: () => unknown, target: unknown) => () => void>();
+const insertSpy = vi.fn<(parent: unknown, accessor: unknown) => void>();
 
 vi.mock('@nativescript-community/solid-js', () => ({
-  render: (...args: unknown[]) => renderSpy(...(args as [() => unknown, unknown])),
+  insert: (...args: unknown[]) => insertSpy(...(args as [unknown, unknown])),
 }));
 
 vi.mock('@tanstack/solid-router', () => ({
@@ -31,7 +31,7 @@ class FakePage {
 
 describe('renderPage', () => {
   beforeEach(() => {
-    renderSpy.mockReset();
+    insertSpy.mockReset();
     vi.useFakeTimers();
 
     (globalThis as any).document = {
@@ -40,9 +40,6 @@ describe('renderPage', () => {
   });
 
   it('re-mounts on navigatedTo even when router path is stale/pending after native back', () => {
-    const disposeSpy = vi.fn();
-    renderSpy.mockReturnValue(disposeSpy);
-
     const onNativeBack = vi.fn();
     const onVisiblePathChange = vi.fn();
 
@@ -57,10 +54,9 @@ describe('renderPage', () => {
 
     const page = renderPage(router, (() => null) as any, '/', onNativeBack, onVisiblePathChange, true) as FakePage;
 
-    expect(renderSpy).toHaveBeenCalledTimes(1);
+    expect(insertSpy).toHaveBeenCalledTimes(1);
 
     page.emit('navigatingFrom', { isBackNavigation: true });
-    expect(disposeSpy).toHaveBeenCalledTimes(1);
 
     vi.runAllTimers();
     expect(onNativeBack).toHaveBeenCalledWith('/');
@@ -70,6 +66,16 @@ describe('renderPage', () => {
     page.emit('navigatedTo');
 
     expect(onVisiblePathChange).toHaveBeenCalledWith('/');
-    expect(renderSpy).toHaveBeenCalledTimes(2);
+    expect(insertSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the mounted tree when a page returns from the backstack after a forward push', () => {
+    const page = renderPage({ state: { location: { pathname: '/' } } } as any, (() => null) as any, '/') as FakePage;
+    expect(insertSpy).toHaveBeenCalledTimes(1);
+
+    page.emit('navigatingFrom', { isBackNavigation: false });
+    page.emit('navigatedTo');
+
+    expect(insertSpy).toHaveBeenCalledTimes(1);
   });
 });
