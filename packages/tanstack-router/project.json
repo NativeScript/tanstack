@@ -48,6 +48,11 @@
       "options": {
         "lintFilePatterns": ["packages/tanstack-router/**/*.ts", "packages/tanstack-router/**/*.tsx", "packages/tanstack-router/**/*.js"]
       }
+    },
+    "nx-release-publish": {
+      "options": {
+        "packageRoot": "dist/packages/{projectName}"
+      }
     }
   },
   "tags": []

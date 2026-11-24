@@ -1,0 +1,338 @@
+name: Release Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact version to release (e.g. 0.3.0-rc.0). Overrides release-type/preid; npm dist-tag is derived from it (0.3.0-rc.0 -> rc, 0.3.0 -> latest)"
+        required: false
+        type: string
+        default: ""
+      release-type:
+        description: "Version bump when 'version' is empty (patch/minor/major publish to npm 'latest'; prerelease uses 'preid')"
+        required: false
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - prerelease
+        default: patch
+      preid:
+        description: "Prerelease identifier (used only when release-type=prerelease and 'version' is empty; also becomes the npm dist-tag, e.g. next | canary)"
+        required: false
+        type: string
+        default: next
+      publish-only:
+        description: "Publish the version already committed in packages/tanstack-router/package.json (with its CHANGELOG entry). Skips version bump and changelog; tags, publishes and creates the GitHub release. Ignores version/release-type/preid."
+        required: false
+        type: boolean
+        default: false
+      dry-run:
+        description: "Run release steps without making changes (no git push, no publish)"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  # Avoid overlapping publishes on the same ref/branch
+  group: nx-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write        # needed to push version commits and tags
+  id-token: write        # required for npm provenance / trusted publishing (OIDC)
+
+env:
+  RELEASE_PROJECT: tanstack-router
+  PACKAGE_DIR: packages/tanstack-router
+
+jobs:
+  release:
+    name: Version and Publish (gated by environment)
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.dry-run && 'npm-publish-dry-run' || 'npm-publish' }}
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository (full history for tagging)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Update npm (required for OIDC trusted publishing)
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure git user for automated commits
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # The checkout above is pinned to the SHA resolved at dispatch time; re-sync to
+      # the branch tip so the release commit/tag push is a fast-forward.
+      - name: Sync to latest branch tip
+        if: ${{ !inputs.dry-run }}
+        run: |
+          git fetch origin "$GITHUB_REF_NAME"
+          git reset --hard "origin/$GITHUB_REF_NAME"
+
+      - name: Resolve release context
+        id: ctx
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_RELEASE_TYPE: ${{ inputs['release-type'] }}
+          INPUT_PREID: ${{ inputs.preid }}
+          INPUT_PUBLISH_ONLY: ${{ inputs['publish-only'] }}
+          INPUT_DRY_RUN: ${{ inputs['dry-run'] }}
+        run: |
+          set -euo pipefail
+
+          dist_tag_for() {
+            # npm dist-tag is the alphabetic prerelease label (0.3.0-rc.0 -> rc); purely numeric labels fall back to next.
+            local v="$1"
+            if [[ "$v" == *-* ]]; then
+              local prerelease="${v#*-}"
+              local tag="${prerelease%%.*}"
+              if [[ "$tag" =~ ^[0-9]+$ ]]; then tag="next"; fi
+              echo "$tag"
+            else
+              echo "latest"
+            fi
+          }
+
+          specifier=""
+          preid=""
+          version=""
+          if [[ "$INPUT_PUBLISH_ONLY" == "true" ]]; then
+            version=$(node -p "require('./${PACKAGE_DIR}/package.json').version")
+            dist_tag=$(dist_tag_for "$version")
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            specifier="$INPUT_VERSION"
+            dist_tag=$(dist_tag_for "$INPUT_VERSION")
+          else
+            specifier="$INPUT_RELEASE_TYPE"
+            # npm dist-tag follows release type: prerelease -> preid, stable -> latest
+            if [[ "$INPUT_RELEASE_TYPE" == "prerelease" ]]; then
+              preid="$INPUT_PREID"
+              dist_tag="$INPUT_PREID"
+            else
+              dist_tag="latest"
+            fi
+          fi
+
+          {
+            echo "publish_only=${INPUT_PUBLISH_ONLY}"
+            echo "specifier=${specifier}"
+            echo "preid=${preid}"
+            echo "version=${version}"
+            echo "dist_tag=${dist_tag}"
+            echo "dry_run=${INPUT_DRY_RUN}"
+          } >> "$GITHUB_OUTPUT"
+
+      # PUBLISH-ONLY: the version and CHANGELOG entry are already committed. Refuse a
+      # version npm already has, then tag HEAD locally (nx.json releaseTagPattern) so the
+      # GitHub release and future changelogs have their anchor.
+      - name: Check committed version (publish-only)
+        if: ${{ inputs['publish-only'] }}
+        shell: bash
+        env:
+          VERSION: ${{ steps.ctx.outputs.version }}
+        run: |
+          set -euo pipefail
+          pkg=$(node -p "require('./${PACKAGE_DIR}/package.json').name")
+          if npm view "${pkg}@${VERSION}" version >/dev/null 2>&1; then
+            echo "::error::${pkg}@${VERSION} is already on npm. Bump the version (or dispatch without publish-only)."
+            exit 1
+          fi
+          if ! grep -q "^## ${VERSION} (" "${PACKAGE_DIR}/CHANGELOG.md"; then
+            echo "::warning::No '## ${VERSION} (' entry in ${PACKAGE_DIR}/CHANGELOG.md; the GitHub release will use generated notes."
+          fi
+          tag="${VERSION}-${RELEASE_PROJECT}"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            if [[ "$(git rev-list -n1 "$tag")" != "$(git rev-parse HEAD)" ]]; then
+              echo "::error::Tag ${tag} already exists on another commit."
+              exit 1
+            fi
+          fi
+
+      # VERSION: bumps the version, generates the changelog, commits + tags locally in one shot.
+      # --skip-publish keeps publishing as a separate step below so the OIDC token-clearing logic still runs.
+      - name: nx release version + changelog
+        if: ${{ !inputs['publish-only'] }}
+        shell: bash
+        env:
+          SPECIFIER: ${{ steps.ctx.outputs.specifier }}
+          PREID: ${{ steps.ctx.outputs.preid }}
+          DRY_RUN: ${{ inputs['dry-run'] }}
+        run: |
+          set -euo pipefail
+
+          preid_arg=()
+          if [[ -n "$PREID" ]]; then
+            preid_arg=(--preid "$PREID")
+          fi
+          dry_run_arg=()
+          if [[ "$DRY_RUN" == "true" ]]; then
+            dry_run_arg=(--dry-run)
+          fi
+
+          npx nx release "$SPECIFIER" \
+            "${preid_arg[@]}" \
+            --projects "$RELEASE_PROJECT" \
+            --skip-publish \
+            --verbose \
+            "${dry_run_arg[@]}"
+
+      - name: Tag committed version (publish-only)
+        if: ${{ inputs['publish-only'] }}
+        shell: bash
+        env:
+          VERSION: ${{ steps.ctx.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="${VERSION}-${RELEASE_PROJECT}"
+          if ! git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            git tag -a "$tag" -m "$tag"
+          fi
+
+      # BUILD + TEST: the build copies the (bumped) package.json into dist/, which is what gets published.
+      - name: Build
+        run: npx nx build "$RELEASE_PROJECT" --verbose
+
+      - name: Test
+        run: npx nx test "$RELEASE_PROJECT"
+
+      - name: Resolve released version
+        id: released
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "version=$(node -p "require('./dist/${PACKAGE_DIR}/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Nothing leaves the runner until build and tests pass. --atomic: if the branch push
+      # is rejected, the release tag is rejected with it, so a failed run leaves no
+      # orphaned tag behind and a plain re-dispatch is enough to retry.
+      - name: Push release commit and tag
+        if: ${{ !inputs['publish-only'] && !inputs.dry-run }}
+        run: git push --atomic --follow-tags origin HEAD
+
+      - name: Push release tag (publish-only)
+        if: ${{ inputs['publish-only'] && !inputs.dry-run }}
+        shell: bash
+        env:
+          VERSION: ${{ steps.ctx.outputs.version }}
+        run: git push origin "refs/tags/${VERSION}-${RELEASE_PROJECT}"
+
+      # PUBLISH: OIDC trusted publishing (default). Avoid any lingering token auth.
+      - name: nx release publish (OIDC)
+        if: ${{ vars.USE_NPM_TOKEN != 'true' }}
+        shell: bash
+        env:
+          NPM_CONFIG_PROVENANCE: true
+          NODE_AUTH_TOKEN: ""
+          DIST_TAG: ${{ steps.ctx.outputs.dist_tag }}
+          DRY_RUN: ${{ inputs['dry-run'] }}
+        run: |
+          set -euo pipefail
+          unset NODE_AUTH_TOKEN
+          rm -f ~/.npmrc || true
+          if [[ -n "${NPM_CONFIG_USERCONFIG:-}" ]]; then
+            rm -f "$NPM_CONFIG_USERCONFIG" || true
+          fi
+
+          dry_run_arg=()
+          if [[ "$DRY_RUN" == "true" ]]; then
+            dry_run_arg=(--dry-run)
+          fi
+
+          npx nx release publish \
+            --projects "$RELEASE_PROJECT" \
+            --tag "$DIST_TAG" \
+            --access public \
+            --verbose \
+            "${dry_run_arg[@]}"
+
+      # PUBLISH: token fallback (only when explicitly enabled via repo/environment variable USE_NPM_TOKEN=true).
+      - name: nx release publish (token)
+        if: ${{ vars.USE_NPM_TOKEN == 'true' }}
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+          DIST_TAG: ${{ steps.ctx.outputs.dist_tag }}
+          DRY_RUN: ${{ inputs['dry-run'] }}
+        run: |
+          set -euo pipefail
+          dry_run_arg=()
+          if [[ "$DRY_RUN" == "true" ]]; then
+            dry_run_arg=(--dry-run)
+          fi
+          npx nx release publish --projects "$RELEASE_PROJECT" --tag "$DIST_TAG" --access public --verbose "${dry_run_arg[@]}"
+
+      # Nx only writes CHANGELOG.md, so the GitHub release is posted here, after the tag
+      # push (so it is not auto-created from the wrong commit) and after npm publish (so
+      # a GitHub API failure cannot block publishing).
+      - name: Create GitHub release
+        if: ${{ !inputs.dry-run }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.released.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          tag="${VERSION}-${RELEASE_PROJECT}"
+          pkg=$(node -p "require('./${PACKAGE_DIR}/package.json').name")
+
+          if gh release view "$tag" --json id --jq .id >/dev/null 2>&1; then
+            echo "Release for '$tag' already exists; skipping."
+            exit 0
+          fi
+
+          notes_file="$(mktemp)"
+          awk -v h="## ${VERSION} (" 'index($0, h) == 1 {found=1; next} /^## / {if (found) exit} found' "${PACKAGE_DIR}/CHANGELOG.md" > "$notes_file"
+
+          flags=(--verify-tag --title "${pkg}@${VERSION}")
+          if [[ "$VERSION" == *-* ]]; then
+            flags+=(--prerelease)
+          else
+            flags+=(--latest)
+          fi
+          if [[ -s "$notes_file" ]]; then
+            flags+=(--notes-file "$notes_file")
+          else
+            flags+=(--generate-notes)
+          fi
+
+          gh release create "$tag" "${flags[@]}"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "Nx Release completed."
+          echo "- project: ${RELEASE_PROJECT}"
+          echo "- publish-only: ${{ steps.ctx.outputs.publish_only }}"
+          echo "- specifier: '${{ steps.ctx.outputs.specifier }}'"
+          echo "- preid: '${{ steps.ctx.outputs.preid }}'"
+          echo "- version: ${{ steps.released.outputs.version }}"
+          echo "- dist-tag: ${{ steps.ctx.outputs.dist_tag }}"
+          echo "- dry-run: ${{ steps.ctx.outputs.dry_run }}"
+          echo "- use-token: ${{ vars.USE_NPM_TOKEN == 'true' }}"
