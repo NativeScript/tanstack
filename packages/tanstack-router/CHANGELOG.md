@@ -1,3 +1,17 @@
+## 0.2.1 (2026-11-23)
+
+The 0.2.0 tarball on npm was built before the following changes landed; 0.2.1 publishes them.
+
+### ⚠️ Breaking Changes
+
+- `nativescript.vite.mjs` no longer registers the TanStack router plugin, and `@tanstack/router-plugin` is no longer a dependency. Apps using file-based routes add `tanstackRouter({ target: 'solid', autoCodeSplitting: false })` from `@tanstack/router-plugin/vite` to their own Vite config. With `@nativescript/vite` applying dependency plugins, shipping it here would register the plugin twice.
+
+### 🩹 Fixes
+
+- Modal routers no longer replace the app router registered on `globalThis.__ns_router`, so HMR keeps patching the live router after a modal opens.
+- `scrollTo` is stubbed as a no-op global: router-core resets window scroll after every render and threw `ReferenceError: scrollTo is not defined` on each navigation.
+- The provider's navigation signal is seeded without a top-level reactive read (no `STRICT_READ_UNTRACKED` dev warnings).
+
 ## 0.2.0 (2026-11-23)
 
 ### ⚠️ Breaking Changes
