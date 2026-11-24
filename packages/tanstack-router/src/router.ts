@@ -7,6 +7,11 @@ import { createNativeScriptHistory } from './history';
 if (typeof self === 'undefined') {
   (globalThis as any).self = globalThis;
 }
+// router-core resets window scroll after every render; NativeScript pages own
+// their scroll state, so the global is a no-op.
+if (typeof (globalThis as any).scrollTo !== 'function') {
+  (globalThis as any).scrollTo = () => {};
+}
 if (typeof AbortController === 'undefined') {
   (globalThis as any).AbortController = NativeScriptAbortController;
   (globalThis as any).AbortSignal = NativeScriptAbortSignal;
@@ -14,16 +19,21 @@ if (typeof AbortController === 'undefined') {
 
 type RouterOptions<TRouteTree extends AnyRoute> = Parameters<typeof createRouter<TRouteTree>>[0];
 
-export function createNativeScriptRouter<TRouteTree extends AnyRoute>(
-  opts: Omit<RouterOptions<TRouteTree>, 'history'> & {
-    initialPath?: string;
-  },
-) {
+type NativeScriptRouterOptions<TRouteTree extends AnyRoute> = Omit<RouterOptions<TRouteTree>, 'history'> & {
+  initialPath?: string;
+};
+
+/** Creates a router without registering it as the app router (used for modal stacks). */
+export function createDetachedNativeScriptRouter<TRouteTree extends AnyRoute>(opts: NativeScriptRouterOptions<TRouteTree>) {
   const { initialPath, ...routerOpts } = opts;
-  const router = createRouter<TRouteTree>({
+  return createRouter<TRouteTree>({
     ...(routerOpts as RouterOptions<TRouteTree>),
     history: createNativeScriptHistory({ initialPath }),
   });
+}
+
+export function createNativeScriptRouter<TRouteTree extends AnyRoute>(opts: NativeScriptRouterOptions<TRouteTree>) {
+  const router = createDetachedNativeScriptRouter(opts);
   // Dev-only: expose router for HMR client to patch route loaders
   // when non-component utility modules change (standard pattern:
   // React uses __REACT_DEVTOOLS_GLOBAL_HOOK__, Vue uses __VUE_HMR_RUNTIME__).

@@ -15,14 +15,36 @@ The package is structured to support any framework (`react`, `vue`, `svelte`, `a
 ## Install
 
 ```bash
-npm install @nativescript/tanstack-router @tanstack/solid-router @tanstack/history
+npm install @nativescript/tanstack-router @tanstack/solid-router@^2.0.0-rc.12 @tanstack/history
 ```
 
-Peer dependencies expected in the host app:
+The Solid flavor targets Solid 2. Peer dependencies expected in the host app:
 
 - `@nativescript/core`
-- `@nativescript-community/solid-js`
-- `solid-js`
+- `@nativescript-community/solid-js` (2.x)
+- `solid-js` and `@solidjs/web` (2.x)
+
+`@tanstack/solid-router` takes its renderer helpers from `@solidjs/web`. The package's
+`nativescript.vite.mjs` (picked up automatically by `@nativescript/vite`) and
+`nativescript.webpack.js` alias `@solidjs/web` to a NativeScript stand-in backed by
+`@nativescript-community/solid-js`, so router internals and app JSX share one renderer.
+
+The router's built-in DOM fallbacks (default error / not-found components) cannot render
+in NativeScript; supply NativeScript components through `defaultErrorComponent` /
+`defaultNotFoundComponent` (or per-route `errorComponent` / `notFoundComponent`) when
+you render nested routes through `<Outlet />`.
+
+## File-Based Routes
+
+Register the TanStack router plugin in the app's own Vite config, before the Solid plugin. It reads
+`tsr.config.json` and regenerates the route tree:
+
+```ts
+import { tanstackRouter } from '@tanstack/router-plugin/vite'
+
+// inside defineConfig(...).plugins
+tanstackRouter({ target: 'solid', autoCodeSplitting: false }),
+```
 
 ## Import Paths
 

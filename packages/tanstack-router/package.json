@@ -1,19 +1,19 @@
 {
   "name": "@nativescript/tanstack-router",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "TanStack Router for NativeScript",
   "main": "index.cjs",
   "types": "index.d.ts",
   "files": [
     "index.cjs",
     "index.mjs",
-    "index.d.ts",
+    "*.d.ts",
+    "*.d.mts",
     "solid",
     "react",
     "nativescript.vite.mjs",
     "nativescript.webpack.js",
     "solid-web-shim.js",
-    "solid-js-jsx-runtime-shim.js",
     "README.md",
     "LICENSE"
   ],
@@ -74,16 +74,14 @@
   "license": "Apache-2.0",
   "homepage": "https://github.com/NativeScript/tanstack",
   "readmeFilename": "README.md",
-  "dependencies": {
-    "@tanstack/router-plugin": "~1.167.0"
-  },
   "peerDependencies": {
-    "@nativescript-community/solid-js": ">=0.1.0",
+    "@nativescript-community/solid-js": ">=2.0.0",
     "@nativescript-community/react": ">=0.1.0",
     "@nativescript/core": ">=9.0.0",
-    "solid-js": ">=1.9.0",
+    "solid-js": ">=2.0.0 <3.0.0",
+    "@solidjs/web": ">=2.0.0 <3.0.0",
     "react": ">=19.0.0",
-    "@tanstack/solid-router": ">=1.169.0",
+    "@tanstack/solid-router": ">=2.0.0-rc.12 <3.0.0",
     "@tanstack/react-router": ">=1.169.0",
     "@tanstack/history": ">=1.161.0"
   },
@@ -95,6 +93,9 @@
       "optional": true
     },
     "solid-js": {
+      "optional": true
+    },
+    "@solidjs/web": {
       "optional": true
     },
     "react": {
@@ -112,9 +113,9 @@
     "typescript": "~5.9.0",
     "vitest": "^4.1.5",
     "@types/react": "^19.0.0",
-    "@tanstack/solid-router": "~1.169.0",
-    "@tanstack/react-router": "~1.169.0",
-    "@tanstack/history": "~1.161.0",
-    "@tanstack/router-core": "~1.169.0"
+    "@tanstack/solid-router": "2.0.0-rc.12",
+    "@tanstack/react-router": "~1.170.46",
+    "@tanstack/history": "1.162.5",
+    "@tanstack/router-core": "1.171.39"
   }
 }
