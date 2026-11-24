@@ -13,6 +13,16 @@ export function getHistoryIndex(historyState: unknown): number {
   return typeof raw === 'number' ? raw : 0;
 }
 
+export function getHistoryKey(historyState: unknown): string {
+  if (!historyState || typeof historyState !== 'object') {
+    return '';
+  }
+
+  const state = historyState as Record<string, unknown>;
+  const raw = state.__TSR_key ?? state.key;
+  return typeof raw === 'string' ? raw : '';
+}
+
 export function getNativeScriptNavigationTransition(historyState: unknown): NativeScriptNavigationTransition | undefined {
   if (!historyState || typeof historyState !== 'object') {
     return undefined;

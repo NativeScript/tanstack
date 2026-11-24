@@ -1,3 +1,14 @@
+## 0.2.2 (2026-11-24)
+
+### 🩹 Fixes
+
+- Links that only navigated on the first tap: router changes that arrived while the Frame sync was locked were dropped, so re-opening a modal after closing it (or navigating during a back transition) did nothing.
+- Android hardware back after closing a modal route: closing a modal (Close link, Android back, iOS sheet swipe) now pops its history entry when it was pushed over the same page, instead of leaving a duplicate entry that swallowed the next Back.
+- A modal route linked from another page (e.g. `/posts?@modal=/users/3` from `/`) opened twice on Android. Modals now open once their page is visible, and cancelled opens never present.
+- Android back while a modal is presented is handled by the dialog, so it closes the modal like the iOS sheet swipe-down.
+- `replace` navigations now drop the replaced page from the Frame backstack, and router back targets the matching backstack page even across several history entries.
+- A tap made while a page was still animating in is no longer reverted when that page's transition finishes.
+
 ## 0.2.1 (2026-11-23)
 
 The 0.2.0 tarball on npm was built before the following changes landed; 0.2.1 publishes them.

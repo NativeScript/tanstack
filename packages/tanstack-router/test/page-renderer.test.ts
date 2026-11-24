@@ -63,9 +63,9 @@ describe('renderPage', () => {
 
     // Router path is still stale ("/posts/1") while the visible native page is "/".
     // navigatedTo must still re-mount deterministically.
-    page.emit('navigatedTo');
+    page.emit('navigatedTo', { isBackNavigation: true });
 
-    expect(onVisiblePathChange).toHaveBeenCalledWith('/');
+    expect(onVisiblePathChange).toHaveBeenCalledWith('/', true);
     expect(insertSpy).toHaveBeenCalledTimes(2);
   });
 

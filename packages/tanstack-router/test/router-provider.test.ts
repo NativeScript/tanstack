@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createComponent } from 'solid-js';
 import { createMemoryHistory, createRootRoute, createRoute, createRouter } from '@tanstack/solid-router';
 import { FakeNode } from './support/fake-native-renderer';
+import { FakeFrame, createFakeElementFactory } from './support/fake-frame';
 
 vi.mock('@nativescript-community/solid-js', async () => {
   const { createFakeCommunitySolid } = await import('./support/fake-native-renderer');
@@ -33,36 +34,10 @@ vi.mock('@nativescript/core/abortcontroller', () => ({
 const community = await import('@nativescript-community/solid-js');
 const { NativeScriptRouterProvider } = await import('../src/NativeScriptRouterProvider');
 
-class FakeFrame extends FakeNode {
-  currentPage?: FakeNode;
-  backStack: FakeNode[] = [];
-  navigations: Array<{ animated?: boolean; backstackVisible?: boolean }> = [];
-
-  navigate(entry: { create: () => FakeNode; animated?: boolean; backstackVisible?: boolean }) {
-    this.navigations.push({ animated: entry.animated, backstackVisible: entry.backstackVisible });
-    const page = entry.create();
-    if (this.currentPage && entry.backstackVisible !== false) this.backStack.push(this.currentPage);
-    this.currentPage = page;
-    page.emit('navigatedTo', { isBackNavigation: false });
-  }
-
-  canGoBack() {
-    return this.backStack.length > 0;
-  }
-
-  goBack() {
-    const page = this.backStack.pop();
-    if (!page) return;
-    this.currentPage?.emit('navigatingFrom', { isBackNavigation: true });
-    this.currentPage = page;
-    page.emit('navigatedTo', { isBackNavigation: true });
-  }
-}
-
 const originalCreateElement = document.createElement;
 
 beforeAll(() => {
-  (document as any).createElement = (tag: string) => (tag.toLowerCase() === 'frame' ? new FakeFrame('frame') : new FakeNode(tag.toLowerCase()));
+  (document as any).createElement = createFakeElementFactory();
 });
 
 afterAll(() => {

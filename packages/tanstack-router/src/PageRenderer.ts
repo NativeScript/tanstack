@@ -41,7 +41,7 @@ export function renderPage(
   RouteComponent: Component,
   routePath: string,
   onNativeBack?: (sourcePath: string) => void,
-  onVisiblePathChange?: (visiblePath: string) => void,
+  onVisiblePathChange?: (visiblePath: string, isBackNavigation: boolean) => void,
   debug?: boolean,
   // Optional per-page chrome thunk (e.g. an <actionbar>). Called inside the page's
   // render scope so it participates in the same reactive lifecycle/disposal as the
@@ -196,9 +196,9 @@ export function renderPage(
   mount();
 
   // Re-mount when this page becomes visible again after back navigation.
-  page.on('navigatedTo', () => {
+  page.on('navigatedTo', (args: NavigatedData) => {
     nativeBackSyncScheduled = resetNativeBackSyncScheduled();
-    onVisiblePathChange?.(getPagePath());
+    onVisiblePathChange?.(getPagePath(), !!args?.isBackNavigation);
     // Deterministic lifecycle handling: once a Page is visible, it must have
     // an active view tree regardless of router pending/transient state.
     mount();
