@@ -4,7 +4,7 @@ import type { AnyRouter } from '@tanstack/solid-router';
 import { Color, ShowModalOptions, Utils } from '@nativescript/core';
 import { renderPage } from './PageRenderer';
 import { setupBackHandler } from './back-handler';
-import { doesRouteIdMatchPathname, getHistoryIndex, getNativeScriptNavigationTransition, getNavigationSignalFromRouterState, getNavigationKind, shouldSkipPathNavigation } from './navigation-state';
+import { doesRouteIdMatchPathname, getHistoryIndex, getHistoryKey, getNativeScriptNavigationTransition, getNavigationSignalFromRouterState, getNavigationKind, shouldSkipPathNavigation } from './navigation-state';
 import { getNativeBackCallbackDecision, shouldCompleteNativeBackSyncOnVisiblePath } from './native-back-sync';
 import { createDebugLogger } from './debug-log';
 import type { NavigationGuard, NativeScriptModalOptionsResolver, NativeScriptModalPresentationOptions } from './types';
@@ -47,6 +47,8 @@ export interface NativeScriptRouterProviderProps {
   actionBar?: (ctx: NativeScriptPageActionBarContext) => SolidElement;
 }
 
+const MAX_MISMATCH_RETRIES = 20;
+
 export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProps) {
   const router = props.router;
 
@@ -65,18 +67,43 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
   let frameRef: any;
   let prevIndex = -1;
   let prevPathname = '';
-  let prevModalPath: string | null = null;
+  // Modal the provider is opening or presenting; null when none is wanted.
+  let modalTargetPath: string | null = null;
   let activeModalPath: string | null = null;
   let activeModalPage: any;
-  let modalLifecycleLock = false;
   let modalRequestId = 0;
+  // History key of the entry whose modal the user just dismissed natively, so the
+  // modal is not reopened before the router has dropped it from that entry.
+  let dismissedModalHistoryKey: string | null = null;
+  // History entries seen so far, by index. Memory history exposes no entry list,
+  // and closing a modal needs to know whether the entry below it is its own page.
+  const seenHistoryEntries: Array<{ pathname: string; modalPath: string | null } | undefined> = [];
   let suppressedNativeBackCallbacks = 0;
   let nativeBackSyncInFlight = false;
   let nativeBackSyncFromPath: string | null = null;
   let queuedNativeBackCount = 0;
   let skipNextFrameBackNavigation = false;
+  let routerGoBackPending = false;
+  let syncQueued = false;
+  let resyncWhenUnlocked = false;
+  let mismatchRetries = 0;
+  let mismatchRetryPath: string | null = null;
+  let disposed = false;
   // Shared guard to prevent circular updates between router and Frame
   const guard: NavigationGuard = { isNavigating: false };
+
+  // Router state is reconciled against the Frame as a whole, so coalescing and
+  // re-running a sync is always safe.
+  const scheduleSync = () => {
+    if (syncQueued || disposed) {
+      return;
+    }
+    syncQueued = true;
+    queueMicrotask(() => {
+      syncQueued = false;
+      syncFrameToRouterState();
+    });
+  };
 
   const releaseGuard = () => {
     guard.isNavigating = false;
@@ -84,6 +111,11 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     if (guard.lockTimeoutId) {
       clearTimeout(guard.lockTimeoutId);
       guard.lockTimeoutId = undefined;
+    }
+    // Router changes that arrived while locked were not applied to the Frame.
+    if (resyncWhenUnlocked) {
+      resyncWhenUnlocked = false;
+      scheduleSync();
     }
   };
 
@@ -104,10 +136,11 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
   installNativeScriptStartTransition(router);
 
   // Includes pathname so child-route swaps inside a layout (e.g. /virtual →
-  // /virtual/inspector) register even when the match ids lag behind.
+  // /virtual/inspector) register even when the match ids lag behind, and the
+  // history entry key so moving between entries that look alike still syncs.
   const readNavigationKey = () => {
     const state = router.state;
-    return `${getNavigationSignalFromRouterState(state)}:${state.location?.pathname || ''}`;
+    return `${getNavigationSignalFromRouterState(state)}:${state.location?.pathname || ''}:${getHistoryKey(state.location?.state)}`;
   };
 
   // Seeded once, then driven only by the router subscriptions below so Frame
@@ -132,43 +165,59 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     updateSignal();
   });
 
+  // The modal page's close callback ignores closes started here: it only syncs
+  // the router for the presented page, which this clears first.
   const closeModalFromRouterState = () => {
-    if (!activeModalPage) {
-      activeModalPath = null;
-      return;
-    }
-
-    modalLifecycleLock = true;
+    // Also cancels an open that is still loading.
+    modalRequestId += 1;
+    modalTargetPath = null;
     const page = activeModalPage;
     activeModalPage = undefined;
     activeModalPath = null;
 
+    if (!page) {
+      return;
+    }
+
     try {
       page.closeModal?.();
-    } finally {
-      setTimeout(() => {
-        modalLifecycleLock = false;
-      }, 0);
+    } catch (err) {
+      console.error('[NSRouter] Failed to close modal:', err);
     }
   };
 
-  const syncRouterOnNativeModalClose = () => {
-    if (modalLifecycleLock) {
+  // The user dismissed the modal natively (Close link, Android back, iOS swipe),
+  // or it could not be shown. Drop it from router state: pop its history entry
+  // when that entry was pushed over the same page, so Back is not spent on a
+  // duplicate; otherwise remove the search param in place.
+  const syncRouterOnNativeModalClose = (modalPath: string) => {
+    const location = router.state.location;
+    if (getSingleModalPathFromSearch(location.search) !== modalPath) {
       return;
     }
 
-    const currentModalPath = getSingleModalPathFromSearch(router.state.location.search);
-    if (!currentModalPath) {
+    dismissedModalHistoryKey = getHistoryKey(location.state);
+    const entryBelow = seenHistoryEntries[getHistoryIndex(location.state) - 1];
+
+    if (entryBelow && entryBelow.pathname === location.pathname && !entryBelow.modalPath && router.history.canGoBack()) {
+      log('[NSRouter] native modal close -> popping modal history entry');
+      router.history.back();
       return;
     }
 
-    acquireGuard('native_modal_close');
+    log('[NSRouter] native modal close -> removing modal search param');
     router.navigate({
       to: '.',
       search: (prev: unknown) => withSingleModalPath(prev, null),
       replace: true,
     } as any);
-    setTimeout(releaseGuard, 0);
+  };
+
+  const abandonModalOpen = (modalPath: string) => {
+    if (modalTargetPath === modalPath) {
+      modalTargetPath = null;
+    }
+    syncRouterOnNativeModalClose(modalPath);
   };
 
   const openModalFromRouterState = async (modalPath: string) => {
@@ -179,6 +228,7 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     }
 
     const requestId = ++modalRequestId;
+    const isCurrentRequest = () => requestId === modalRequestId && !disposed;
     let modalPageRef: any;
     const parentContext = (router as any).options?.context;
     const modalContext = parentContext && typeof parentContext === 'object' ? { ...parentContext } : {};
@@ -200,11 +250,11 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
       await modalRouter.load();
     } catch (err) {
       console.error('[NSRouter] Modal router load failed for path:', modalPath, err);
-      syncRouterOnNativeModalClose();
+      if (isCurrentRequest()) abandonModalOpen(modalPath);
       return;
     }
 
-    if (requestId !== modalRequestId) {
+    if (!isCurrentRequest()) {
       return;
     }
 
@@ -212,7 +262,7 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     const leafMatch = modalMatches[modalMatches.length - 1];
     if (!leafMatch) {
       console.error('[NSRouter] No modal match found for path:', modalPath);
-      syncRouterOnNativeModalClose();
+      abandonModalOpen(modalPath);
       return;
     }
 
@@ -222,7 +272,7 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
 
     if (!Component) {
       console.error('[NSRouter] Invalid modal route component for route:', leafMatch.routeId, 'shape:', describeComponentShape(rawComponent), 'value:', rawComponent);
-      syncRouterOnNativeModalClose();
+      abandonModalOpen(modalPath);
       return;
     }
 
@@ -295,11 +345,14 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
       animated: resolvedModalOptions?.animated ?? props.animated ?? true,
       fullscreen: resolvedModalOptions?.fullscreen ?? __ANDROID__,
       closeCallback: () => {
-        if (activeModalPage === modalPage) {
-          activeModalPage = undefined;
-          activeModalPath = null;
+        // Closes started by the router already cleared activeModalPage.
+        if (activeModalPage !== modalPage) {
+          return;
         }
-        syncRouterOnNativeModalClose();
+        activeModalPage = undefined;
+        activeModalPath = null;
+        modalTargetPath = null;
+        syncRouterOnNativeModalClose(modalPath);
       },
     };
 
@@ -310,6 +363,11 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     }
 
     const attemptShowModal = (hostPage: any) => {
+      // The router may have moved on, or a newer open started, while this waited.
+      if (!isCurrentRequest() || activeModalPage) {
+        return;
+      }
+
       try {
         log('[NSRouter] showModal attempt:', 'path=', modalPath, 'hostLoaded=', !!hostPage?.isLoaded, 'frameLoaded=', !!hostPage?.frame?.isLoaded);
 
@@ -320,7 +378,7 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
         activeModalPage = undefined;
         activeModalPath = null;
         console.error('[NSRouter] Failed to show modal for path:', modalPath, err);
-        syncRouterOnNativeModalClose();
+        abandonModalOpen(modalPath);
       }
     };
 
@@ -332,16 +390,6 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
 
         const onHostLoaded = () => {
           currentPage.removeEventListener?.('loaded', onHostLoaded);
-
-          if (requestId !== modalRequestId) {
-            return;
-          }
-
-          const latestModalPath = getSingleModalPathFromSearch(router.state.location.search);
-          if (!latestModalPath || latestModalPath !== modalPath || activeModalPath) {
-            return;
-          }
-
           setTimeout(() => attemptShowModal(currentPage), 0);
         };
 
@@ -352,6 +400,9 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     } else {
       attemptShowModal(currentPage);
       setTimeout(() => {
+        if (activeModalPage !== modalPage) {
+          return;
+        }
         try {
           configureIOSModalSheet();
         } catch (err) {
@@ -377,8 +428,15 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     router.history.back();
   };
 
-  const reconcileRouterToVisiblePath = (visiblePath: string) => {
+  const reconcileRouterToVisiblePath = (visiblePath: string, isBackNavigation: boolean) => {
     const activePath = router.state.location.pathname;
+    const isRouterInitiatedBack = isBackNavigation && routerGoBackPending;
+    if (isBackNavigation) {
+      routerGoBackPending = false;
+    }
+    // A page that finished appearing may host a deferred modal.
+    scheduleSync();
+
     if (visiblePath === activePath) {
       // Native visibility has aligned with router path, so any in-flight native
       // back sync can be deterministically completed from this event.
@@ -397,6 +455,13 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
         }
         setTimeout(tryDrainQueuedNativeBack, 0);
       }
+      return;
+    }
+
+    // Only a native pop the router did not start can leave the router behind the
+    // Frame. Pages the router itself pushed or popped report a stale path when
+    // the router moved on during their transition; the Frame catches up instead.
+    if (!isBackNavigation || isRouterInitiatedBack) {
       return;
     }
 
@@ -476,7 +541,7 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     log('[NSRouter] initial load:', JSON.stringify(router.latestLocation?.pathname));
     loadRouter('initial');
 
-    const cleanupBack = setupBackHandler(router, () => frameRef, guard);
+    const cleanupBack = setupBackHandler(router, () => !!activeModalPage);
 
     // Route-file edits are hot-swapped per Page (see solid-hmr-remount.ts) so the
     // navigation stack survives the edit.
@@ -490,6 +555,7 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
 
     return () => {
       closeModalFromRouterState();
+      disposed = true;
       unsubHistory();
       cleanupBack();
       cleanupHmr();
@@ -499,7 +565,64 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
     };
   });
 
+  // Opens/closes the native modal so it matches `?@modal=`. Opening waits until
+  // the route's own Page is the visible one; its navigatedTo schedules a resync.
+  const reconcileModal = (curModalPath: string | null) => {
+    const historyKey = getHistoryKey(router.state.location.state);
+    if (dismissedModalHistoryKey && dismissedModalHistoryKey !== historyKey) {
+      dismissedModalHistoryKey = null;
+    }
+
+    if (curModalPath === modalTargetPath) {
+      return;
+    }
+
+    if (modalTargetPath) {
+      closeModalFromRouterState();
+    }
+
+    if (!curModalPath) {
+      return;
+    }
+
+    if (dismissedModalHistoryKey) {
+      return;
+    }
+
+    const hostPath = frameRef?.currentPage?.__nsRouterPath;
+    if (hostPath !== router.state.location.pathname) {
+      log('[NSRouter] deferring modal open until its page is visible:', curModalPath, 'visible=', hostPath);
+      return;
+    }
+
+    modalTargetPath = curModalPath;
+    void openModalFromRouterState(curModalPath);
+  };
+
+  const recordHistoryEntry = (index: number, kind: 'forward' | 'back' | 'replace', pathname: string, modalPath: string | null) => {
+    if (kind !== 'back') {
+      // A push or replace discards every entry above it.
+      seenHistoryEntries.length = Math.min(seenHistoryEntries.length, index + 1);
+    }
+    seenHistoryEntries[index] = { pathname, modalPath };
+  };
+
+  // Nearest backstack entry showing `pathname`; router back can span several
+  // entries (history.go(-n)), so popping just the top page is not enough.
+  const findBackstackEntryForPath = (pathname: string) => {
+    const backStack: any[] = frameRef?.backStack || [];
+    for (let i = backStack.length - 1; i >= 0; i--) {
+      if (backStack[i]?.resolvedPage?.__nsRouterPath === pathname) {
+        return backStack[i];
+      }
+    }
+    return undefined;
+  };
+
   const syncFrameToRouterState = () => {
+    if (disposed) {
+      return;
+    }
     if (!frameRef) {
       log('[NSRouter] no frameRef');
       return;
@@ -524,77 +647,85 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
       tryDrainQueuedNativeBack();
     }
 
+    const curModalPath = getSingleModalPathFromSearch(state.location.search);
+
     if (nativeBackSyncInFlight || guard.isNavigating) {
+      // Dropping a modal never has to wait for the Frame.
+      if (!curModalPath) {
+        reconcileModal(null);
+      }
+      log('[NSRouter] Frame sync deferred until unlocked. reason:', guard.lockReason || 'native_back_in_flight');
+      resyncWhenUnlocked = true;
       return;
     }
 
-    const curIndex = getHistoryIndex(router.history.location.state as any);
-    const curTransition = getNativeScriptNavigationTransition(router.history.location.state);
+    syncFramePath(state, matches);
+    reconcileModal(curModalPath);
+  };
+
+  const syncFramePath = (state: AnyRouter['state'], matches: AnyRouter['state']['matches']) => {
+    // Index, key and pathname all come from the router's parsed location so they
+    // describe the same entry even while history is ahead of a pending load.
+    const curIndex = getHistoryIndex(state.location.state);
+    const curTransition = getNativeScriptNavigationTransition(state.location.state);
     const curPathname = state.location.pathname;
     const curModalPath = getSingleModalPathFromSearch(state.location.search);
     const hasPathChanged = !shouldSkipPathNavigation(curPathname, prevPathname, prevIndex);
-
-    if (curModalPath !== prevModalPath) {
-      if (!curModalPath) {
-        closeModalFromRouterState();
-        prevModalPath = curModalPath;
-      } else if (!activeModalPath) {
-        // Defer opening modal until the base path is settled on the active page.
-        if (hasPathChanged && prevPathname) {
-          log('[NSRouter] deferring modal open until pathname settles:', curModalPath);
-        } else {
-          void openModalFromRouterState(curModalPath);
-          prevModalPath = curModalPath;
-        }
-      } else if (activeModalPath !== curModalPath) {
-        closeModalFromRouterState();
-        void openModalFromRouterState(curModalPath);
-        prevModalPath = curModalPath;
-      }
-    }
-
-    if (guard.isNavigating) {
-      log('[NSRouter] guard active; syncing prev tracking only. reason:', guard.lockReason);
-      prevIndex = curIndex;
-      prevPathname = curPathname;
-      return;
-    }
+    const navigationKind = getNavigationKind(prevIndex, curIndex);
 
     log('[NSRouter] curPathname:', curPathname, 'prevPathname:', prevPathname, 'curIndex:', curIndex, 'prevIndex:', prevIndex);
 
     // Skip if the pathname hasn't changed (e.g., only search params changed)
     if (!hasPathChanged) {
+      recordHistoryEntry(curIndex, navigationKind, curPathname, curModalPath);
       prevIndex = curIndex;
       return;
     }
 
-    const navigationKind = getNavigationKind(prevIndex, curIndex);
-    const isBack = navigationKind === 'back';
-    const isReplace = navigationKind === 'replace';
-
-    if (isBack) {
+    if (navigationKind === 'back') {
       if (skipNextFrameBackNavigation) {
         skipNextFrameBackNavigation = false;
         log('[NSRouter] skipping Frame.goBack for native-originated back sync');
+        recordHistoryEntry(curIndex, navigationKind, curPathname, curModalPath);
         prevIndex = curIndex;
         prevPathname = curPathname;
         return;
       }
 
-      acquireGuard('router_state_back');
-      if (frameRef.canGoBack()) {
+      const target = findBackstackEntryForPath(curPathname);
+      if (target) {
+        recordHistoryEntry(curIndex, navigationKind, curPathname, curModalPath);
+        prevIndex = curIndex;
+        prevPathname = curPathname;
+        acquireGuard('router_state_back');
         // Router-initiated goBack causes a native navigatingFrom(back) event.
         // Suppress exactly one sync callback for this controlled pop.
         suppressedNativeBackCallbacks += 1;
-        frameRef.goBack();
+        routerGoBackPending = true;
+        frameRef.goBack(target);
+        setTimeout(releaseGuard, 0);
+        return;
       }
-      prevIndex = curIndex;
-      prevPathname = curPathname;
-      setTimeout(releaseGuard, 0);
+
+      // The Frame holds no page for this entry; show it in place of the current one.
+      log('[NSRouter] no backstack page for', curPathname, '- replacing current page');
+      if (navigateFrameTo(state, matches, curPathname, curTransition, true)) {
+        recordHistoryEntry(curIndex, navigationKind, curPathname, curModalPath);
+        prevIndex = curIndex;
+        prevPathname = curPathname;
+      }
       return;
     }
 
-    // Forward or replace navigation
+    if (navigateFrameTo(state, matches, curPathname, curTransition, navigationKind === 'replace')) {
+      recordHistoryEntry(curIndex, navigationKind, curPathname, curModalPath);
+      prevIndex = curIndex;
+      prevPathname = curPathname;
+    }
+  };
+
+  // Pushes the route's Page; returns false when it must retry once matches settle.
+  const navigateFrameTo = (state: AnyRouter['state'], matches: AnyRouter['state']['matches'], curPathname: string, curTransition: ReturnType<typeof getNativeScriptNavigationTransition>, isReplace: boolean): boolean => {
     let leafMatch = matches[matches.length - 1];
 
     // If the leaf match's routeId doesn't match the current pathname, the matches
@@ -619,16 +750,22 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
       if (resolvedRouteId) {
         log('[NSRouter] match/path mismatch resolved:', leafMatch.routeId, '->', resolvedRouteId, 'for pathname:', curPathname);
         leafMatch = { ...leafMatch, routeId: resolvedRouteId };
-        // Schedule a delayed signal update so the match stores settle and
-        // useParams/useMatch can read correct data when the component renders.
-        setTimeout(() => updateSignal(), 16);
       } else {
+        if (mismatchRetryPath !== curPathname) {
+          mismatchRetryPath = curPathname;
+          mismatchRetries = 0;
+        }
         log('[NSRouter] deferring Frame navigation due to pending match/path mismatch:', 'routeId=', leafMatch.routeId, 'pathname=', curPathname, 'status=', state.status);
-        // Schedule retry — stores may settle on next tick
-        setTimeout(() => updateSignal(), 16);
-        return;
+        // Stores may settle on the next tick; router load events also resync.
+        if (mismatchRetries < MAX_MISMATCH_RETRIES) {
+          mismatchRetries += 1;
+          setTimeout(scheduleSync, 16);
+        }
+        return false;
       }
     }
+    mismatchRetries = 0;
+    mismatchRetryPath = null;
 
     const route = (router as any).routesById[leafMatch.routeId];
     const rawComponent = route?.options?.component;
@@ -638,9 +775,7 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
 
     if (!Component) {
       console.error('[NSRouter] Invalid route component for route:', leafMatch.routeId, 'shape:', describeComponentShape(rawComponent), 'value:', rawComponent);
-      prevIndex = curIndex;
-      prevPathname = curPathname;
-      return;
+      return true;
     }
 
     acquireGuard('router_state_forward_or_replace');
@@ -658,10 +793,18 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
           })
       : undefined;
 
-    log('[NSRouter] navigating Frame to', curPathname);
-    frameRef.navigate({
-      create: () =>
-        renderPage(
+    // The Frame drops a page from its backstack based on that page's own entry
+    // when navigating away, so a replace flags the outgoing entry.
+    if (isReplace) {
+      const outgoingEntry = frameRef.currentPage?.__nsRouterNavigationEntry;
+      if (outgoingEntry) {
+        outgoingEntry.backstackVisible = false;
+      }
+    }
+
+    const navigationEntry: any = {
+      create: () => {
+        const page = renderPage(
           router,
           Component,
           curPathname,
@@ -712,31 +855,21 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
           reconcileRouterToVisiblePath,
           props.debug,
           pageChrome,
-        ),
+        );
+        page.__nsRouterNavigationEntry = navigationEntry;
+        return page;
+      },
       animated: prevIndex >= 0 ? (props.animated ?? true) : false,
       transition: curTransition ?? props.transition,
-      backstackVisible: !isReplace,
+      backstackVisible: true,
       clearHistory: false,
-    });
+    };
 
-    prevIndex = curIndex;
-    prevPathname = curPathname;
-
-    // If a modal path is present on a path transition, open it after the
-    // new page has a chance to become current.
-    if (curModalPath && !activeModalPath) {
-      setTimeout(() => {
-        const latestModalPath = getSingleModalPathFromSearch(router.state.location.search);
-        if (!latestModalPath || latestModalPath !== curModalPath || activeModalPath) {
-          return;
-        }
-
-        void openModalFromRouterState(latestModalPath);
-        prevModalPath = latestModalPath;
-      }, 0);
-    }
+    log('[NSRouter] navigating Frame to', curPathname, isReplace ? '(replace)' : '');
+    frameRef.navigate(navigationEntry);
 
     releaseGuard();
+    return true;
   };
 
   createEffect(
@@ -745,7 +878,7 @@ export function NativeScriptRouterProvider(props: NativeScriptRouterProviderProp
       log('[NSRouter] effect fired, navigationSignal:', signal, 'frameRef:', !!frameRef);
       // Frame navigation renders a new Page root, and Solid forbids creating
       // ownerless roots inside an effect callback, so the sync runs right after it.
-      queueMicrotask(syncFrameToRouterState);
+      scheduleSync();
     },
   );
 
