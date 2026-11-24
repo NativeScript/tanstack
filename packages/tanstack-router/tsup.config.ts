@@ -13,11 +13,7 @@ export default defineConfig({
   clean: false,
   target: 'es2018',
   outDir: 'dist/packages/tanstack-router',
-  external: ['@tanstack/solid-router', '@tanstack/react-router', '@tanstack/history', '@nativescript/core', '@nativescript/core/abortcontroller', '@nativescript-community/solid-js', '@nativescript-community/react', 'solid-js', 'solid-js/web', 'solid-js/jsx-runtime', 'react', 'react-dom', 'react/jsx-runtime', 'react-reconciler'],
-  esbuildOptions(options) {
-    options.jsx = 'automatic';
-    options.jsxImportSource = 'solid-js';
-  },
+  external: ['@tanstack/solid-router', '@tanstack/react-router', '@tanstack/history', '@nativescript/core', '@nativescript/core/abortcontroller', '@nativescript-community/solid-js', '@nativescript-community/react', 'solid-js', 'react', 'react-dom', 'react/jsx-runtime', 'react-reconciler'],
   outExtension({ format }) {
     return {
       js: format === 'esm' ? '.mjs' : '.cjs',

@@ -1,170 +1,156 @@
 // @vitest-environment jsdom
 //
-// Closest possible reproduction of the deployed bundle's render flow:
-//   - universal renderer (just like @nativescript-community/solid-js)
-//   - the published `solid-js-jsx-runtime-shim.js`'s `jsx` function (via dynamic import)
-//   - the published `renderPage` shape: render(() => jsx(RouterContextProvider, {router, children: () => jsx(ErrorBoundary, {fallback, children: jsx(SafeRouteView, {})})}), page)
-//   - SafeRouteView -> Home -> returns ARRAY [actionbar, scrollview-tree]
+// Runs the shipped `renderPage` against a real router, with only the NativeScript
+// layer faked: `@nativescript-community/solid-js` is a FakeNode-backed universal
+// renderer and `document.createElement('Page')` returns a FakeNode page that
+// fills NativeScript's `actionBar` / `content` slots.
 
-import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { createRenderer } from 'solid-js/universal';
-import { ErrorBoundary, createComponent } from 'solid-js';
-import { RouterContextProvider, createMemoryHistory, createRootRoute, createRoute, createRouter, getRouteApi } from '@tanstack/solid-router';
-// Load the actual published shim's jsx (same file that ships in the package)
-import { jsx } from '../solid-js-jsx-runtime-shim.js';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory, createRootRoute, createRoute, createRouter, getRouteApi } from '@tanstack/solid-router';
+import { FakeNode, collectTags } from './support/fake-native-renderer';
 
-vi.mock('solid-js/web', async () => {
+vi.mock('@nativescript-community/solid-js', async () => {
+  const { createFakeCommunitySolid } = await import('./support/fake-native-renderer');
+  return createFakeCommunitySolid();
+});
+
+vi.mock('@solidjs/web', async () => {
   return await import('../solid-web-shim.js');
 });
 
+vi.mock('@nativescript/core', () => ({}));
+
+const community = await import('@nativescript-community/solid-js');
+const { renderPage } = await import('../src/PageRenderer');
+
+const originalCreateElement = document.createElement;
+
 beforeAll(() => {
-  process.env.NODE_ENV = 'development';
+  (document as any).createElement = (tag: string) => new FakeNode(tag.toLowerCase());
 });
 
-type FakeNode = {
-  tag: string;
-  text?: string;
-  attrs: Record<string, unknown>;
-  children: Array<FakeNode>;
-  parent?: FakeNode;
-  // dominative-Page-style content + actionBar slots
-  actionBar?: FakeNode;
-  content?: FakeNode;
-  isPage?: boolean;
-  isActionBar?: boolean;
-};
+afterAll(() => {
+  (document as any).createElement = originalCreateElement;
+});
 
-function makeNode(tag: string): FakeNode {
-  const node: FakeNode = { tag, attrs: {}, children: [] };
-  if (tag === 'page' || tag === 'Page') node.isPage = true;
-  if (tag === 'actionbar') node.isActionBar = true;
-  return node;
+const settle = () => new Promise((r) => setTimeout(r, 30));
+
+function createLabel(text: string) {
+  const label = community.createElement('label');
+  community.setProp(label, 'text', text);
+  return label;
 }
 
-const universal = createRenderer<FakeNode>({
-  createElement(tag) {
-    return makeNode(tag);
-  },
-  createTextNode(value) {
-    const n = makeNode('#text');
-    n.text = value;
-    return n;
-  },
-  isTextNode(node) {
-    return node.tag === '#text';
-  },
-  replaceText(node, value) {
-    node.text = value;
-  },
-  setProperty(node, name, value) {
-    node.attrs[name] = value;
-  },
-  insertNode(parent, node, anchor) {
-    if (anchor) {
-      const idx = parent.children.indexOf(anchor);
-      parent.children.splice(idx, 0, node);
-    } else {
-      parent.children.push(node);
-    }
-    node.parent = parent;
-    // Mimic dominative Page child handling
-    if (parent.isPage) {
-      if (node.isActionBar) parent.actionBar = node;
-      else parent.content = node;
-    }
-  },
-  removeNode(parent, node) {
-    const idx = parent.children.indexOf(node);
-    if (idx >= 0) parent.children.splice(idx, 1);
-    if (parent.actionBar === node) parent.actionBar = undefined;
-    if (parent.content === node) parent.content = undefined;
-    node.parent = undefined;
-  },
-  getParentNode(node) {
-    return node.parent as FakeNode;
-  },
-  getFirstChild(node) {
-    return node.children[0] as FakeNode;
-  },
-  getNextSibling(node) {
-    if (!node.parent) return undefined as unknown as FakeNode;
-    const idx = node.parent.children.indexOf(node);
-    return node.parent.children[idx + 1] as FakeNode;
-  },
-});
+async function createLoadedRouter(component: () => any) {
+  const rootRoute = createRootRoute();
+  const indexRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/',
+    loader: () => ({ greeting: 'hi' }),
+    component,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([indexRoute]),
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+  });
+  await router.load();
+  expect(router.state.matches.find((m) => m.routeId === '/')?.status).toBe('success');
+  return router;
+}
 
-describe('Full deployed render flow', () => {
-  it('inserts actionbar + scrollview into Page when Home returns a fragment array', async () => {
-    const rootRoute = createRootRoute();
-
-    const indexRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: '/',
-      loader: () => ({ greeting: 'hi' }),
-      component: () => {
-        // Mimic what babel-preset-solid emits for Home()
-        const route = getRouteApi('/');
-        const data = route.useLoaderData();
-        void data();
-        const ab = universal.createElement('actionbar');
-        universal.setProp(ab, 'title', 'TanStack Router', undefined);
-        const sv = universal.createElement('scrollview');
-        const sl = universal.createElement('stacklayout');
-        const lbl = universal.createElement('label');
-        universal.setProp(lbl, 'text', 'Native SolidJS News', undefined);
-        universal.insertNode(sl, lbl);
-        universal.insertNode(sv, sl);
-        return [ab, sv] as any;
-      },
+describe('renderPage (deployed render flow)', () => {
+  it('slots a fragment-returning route component into the Page actionBar and content', async () => {
+    const router = await createLoadedRouter(() => {
+      const data = getRouteApi('/').useLoaderData();
+      const actionBar = community.createElement('actionbar');
+      community.setProp(actionBar, 'title', 'TanStack Router');
+      const scroll = community.createElement('scrollview');
+      const stack = community.createElement('stacklayout');
+      community.insert(stack, () => createLabel(`greeting:${(data() as any).greeting}`));
+      community.insertNode(scroll, stack);
+      return [actionBar, scroll];
     });
 
-    const router = createRouter({
-      routeTree: rootRoute.addChildren([indexRoute]),
-      history: createMemoryHistory({ initialEntries: ['/'] }),
-    });
+    const Home = (router as any).routesById['/'].options.component;
+    const page = renderPage(router as any, Home, '/') as FakeNode;
+    await settle();
 
-    await router.load();
-    expect(router.state.matches.find((m) => m.routeId === '/')?.status).toBe('success');
-
-    const page = makeNode('page');
-    let caught: any;
-
-    const Comp = (indexRoute as any).options.component;
-    const SafeRouteView = () => createComponent(Comp, {});
-
-    const dispose = universal.render(
-      (() =>
-        jsx(RouterContextProvider, {
-          router,
-          children: () =>
-            jsx(ErrorBoundary, {
-              fallback: (err: any) => {
-                caught = err;
-                return null;
-              },
-              children: jsx(SafeRouteView, {}),
-            }),
-        })) as any,
-      page,
-    );
-
-    await new Promise((r) => setTimeout(r, 50));
-
-    // Diagnose
-    if (page.children.length === 0) {
-      console.error('Page is EMPTY — repro!');
-      console.error(
-        'Page snapshot:',
-        JSON.stringify(page, (k, v) => (k === 'parent' ? undefined : v), 2),
-      );
-    }
-
-    expect(caught, `ErrorBoundary should not have caught anything but got: ${caught?.message ?? caught}`).toBeUndefined();
-    expect(page.children.length, 'page should have inserted children').toBeGreaterThan(0);
     expect(page.actionBar?.tag).toBe('actionbar');
     expect(page.actionBar?.attrs.title).toBe('TanStack Router');
     expect(page.content?.tag).toBe('scrollview');
+    expect(collectTags(page)).toEqual(['actionbar', 'scrollview', 'stacklayout', 'label']);
+    const label = page.content!.children[0].children[0];
+    expect(label.attrs.text).toBe('greeting:hi');
+  });
 
-    dispose();
+  it('renders per-page chrome beside the route content', async () => {
+    const router = await createLoadedRouter(() => community.createElement('stacklayout'));
+    const Home = (router as any).routesById['/'].options.component;
+
+    const page = renderPage(router as any, Home, '/', undefined, undefined, false, () => {
+      const actionBar = community.createElement('actionbar');
+      community.setProp(actionBar, 'title', 'Chrome');
+      return actionBar;
+    }) as FakeNode;
+    await settle();
+
+    expect(page.actionBar?.attrs.title).toBe('Chrome');
+    expect(page.content?.tag).toBe('stacklayout');
+  });
+
+  it('swallows reactive route errors and resets the boundary when the page loads again', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let shouldThrow = true;
+    const router = await createLoadedRouter(() => {
+      const stack = community.createElement('stacklayout');
+      community.insert(stack, () => {
+        if (shouldThrow) throw new Error('boom');
+        return createLabel('recovered');
+      });
+      return stack;
+    });
+    const Home = (router as any).routesById['/'].options.component;
+
+    const page = renderPage(router as any, Home, '/') as FakeNode;
+    await settle();
+
+    expect(collectTags(page)).toEqual([]);
+    expect(errorSpy).toHaveBeenCalledWith('[NSRouter] Errored caught:', expect.objectContaining({ message: 'boom' }));
+
+    shouldThrow = false;
+    page.emit('loaded');
+    await settle();
+
+    expect(collectTags(page)).toEqual(['stacklayout', 'label']);
+    errorSpy.mockRestore();
+  });
+
+  it('keeps the views of a page popped by native back, and remounts cleanly afterwards', async () => {
+    const router = await createLoadedRouter(() => createLabel('first'));
+    const Home = (router as any).routesById['/'].options.component;
+    const page = renderPage(router as any, Home, '/') as FakeNode;
+    await settle();
+
+    page.emit('navigatingFrom', { isBackNavigation: true });
+    expect(page.content?.attrs.text, 'views stay attached for the pop animation').toBe('first');
+
+    page.emit('navigatedTo');
+    await settle();
+    expect(page.children.filter((c) => c.tag !== '#text')).toHaveLength(1);
+    expect(page.content?.attrs.text).toBe('first');
+  });
+
+  it('__ns_remount swaps the route component in place', async () => {
+    const router = await createLoadedRouter(() => createLabel('before'));
+    const Home = (router as any).routesById['/'].options.component;
+    const page = renderPage(router as any, Home, '/') as any;
+    await settle();
+    expect(page.content?.attrs.text).toBe('before');
+
+    page.__ns_remount(() => createLabel('after'));
+    await settle();
+
+    expect(page.children.filter((c: FakeNode) => c.tag !== '#text')).toHaveLength(1);
+    expect(page.content?.attrs.text).toBe('after');
   });
 });

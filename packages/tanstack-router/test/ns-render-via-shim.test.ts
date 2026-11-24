@@ -1,86 +1,51 @@
 // @vitest-environment jsdom
 //
-// Reproduces the NativeScript rendering pipeline using the universal Solid
-// renderer plus our `solid-web-shim.js`, mirroring how the @nativescript/vite
-// `solid` config aliases `solid-js/web` for app builds. This catches the kind
-// of cross-package reactivity bugs that show up as "blank screen" in NS at
-// runtime — for instance, the 1.168+ regression where `useMatch` couldn't
-// resolve the active match and `<RouterContextProvider>` ended up rendering
-// nothing because our shim's `memo()` wasn't actually memoizing.
+// Drives @tanstack/solid-router's own components (RouterContextProvider, Outlet →
+// Match, Dynamic, memo) through the shipped `solid-web-shim.js`, with the
+// NativeScript renderer swapped for a FakeNode-backed universal renderer. This is
+// the wiring an app gets once nativescript.vite.mjs aliases `@solidjs/web`.
 
-import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { createRenderer } from 'solid-js/universal';
-import { createComponent, ErrorBoundary } from 'solid-js';
-import { createMemoryHistory, createRootRoute, createRoute, createRouter, getRouteApi, RouterContextProvider } from '@tanstack/solid-router';
+import { describe, it, expect, vi } from 'vitest';
+import { Errored, createComponent, flush, untrack } from 'solid-js';
+import { createMemoryHistory, createRootRoute, createRoute, createRouter, getRouteApi, Match, Outlet, RouterContextProvider } from '@tanstack/solid-router';
+import { FakeNode, collectTags } from './support/fake-native-renderer';
 
-// Provide a `solid-js/web` alias backed by the actual shim file shipped in
-// the package so the imports from @tanstack/solid-router resolve through it.
-vi.mock('solid-js/web', async () => {
+vi.mock('@nativescript-community/solid-js', async () => {
+  const { createFakeCommunitySolid } = await import('./support/fake-native-renderer');
+  return createFakeCommunitySolid();
+});
+
+vi.mock('@solidjs/web', async () => {
   return await import('../solid-web-shim.js');
 });
 
-beforeAll(() => {
-  process.env.NODE_ENV = 'development';
-});
+const community = await import('@nativescript-community/solid-js');
+const shim: any = await import('../solid-web-shim.js');
 
-// Minimal "NativeScript-like" element backing — just a tiny tagged tree we
-// can introspect to verify children were inserted.
-type FakeNode = {
-  tag: string;
-  text?: string;
-  children: Array<FakeNode>;
-  parent?: FakeNode;
-  attrs: Record<string, unknown>;
-};
-
-function makeNode(tag: string): FakeNode {
-  return { tag, children: [], attrs: {} };
+function renderIntoPage(router: any, view: () => any) {
+  const page = new FakeNode('page');
+  let caught: unknown;
+  const dispose = community.render(
+    () =>
+      createComponent(RouterContextProvider as any, {
+        router,
+        children: () =>
+          createComponent(Errored, {
+            fallback: (err: () => unknown) => {
+              caught = untrack(err);
+              return null;
+            },
+            get children() {
+              return view();
+            },
+          }),
+      }),
+    page,
+  );
+  return { page, dispose, caught: () => caught };
 }
 
-const universal = createRenderer<FakeNode>({
-  createElement(tag) {
-    return makeNode(tag);
-  },
-  createTextNode(value) {
-    const n = makeNode('#text');
-    n.text = value;
-    return n;
-  },
-  isTextNode(node) {
-    return node.tag === '#text';
-  },
-  replaceText(node, value) {
-    node.text = value;
-  },
-  setProperty(node, name, value) {
-    node.attrs[name] = value;
-  },
-  insertNode(parent, node, anchor) {
-    if (anchor) {
-      const idx = parent.children.indexOf(anchor);
-      parent.children.splice(idx, 0, node);
-    } else {
-      parent.children.push(node);
-    }
-    node.parent = parent;
-  },
-  removeNode(parent, node) {
-    const idx = parent.children.indexOf(node);
-    if (idx >= 0) parent.children.splice(idx, 1);
-    node.parent = undefined;
-  },
-  getParentNode(node) {
-    return node.parent as FakeNode;
-  },
-  getFirstChild(node) {
-    return node.children[0] as FakeNode;
-  },
-  getNextSibling(node) {
-    if (!node.parent) return undefined as unknown as FakeNode;
-    const idx = node.parent.children.indexOf(node);
-    return node.parent.children[idx + 1] as FakeNode;
-  },
-});
+const settle = () => new Promise((r) => setTimeout(r, 30));
 
 describe('NativeScript rendering pipeline (universal renderer + solid-web-shim)', () => {
   it('renders the leaf route component with reactive loaderData via getRouteApi', async () => {
@@ -91,16 +56,11 @@ describe('NativeScript rendering pipeline (universal renderer + solid-web-shim)'
 
     const HomeComponent: any = () => {
       homeInvocations++;
-      const route = getRouteApi('/');
-      const loaderData = route.useLoaderData();
-      lastLoaderData = loaderData();
-      // Build a small NS-style tree so we can verify it was inserted into the page
-      const label = makeNode('label');
-      label.attrs.text = `loaded:${(loaderData() as any)?.greeting ?? 'NONE'}`;
-      const stack = makeNode('stacklayout');
-      stack.children = [label];
-      label.parent = stack;
-      return stack;
+      const loaderData = getRouteApi('/').useLoaderData();
+      lastLoaderData = untrack(loaderData);
+      const label = community.createElement('label');
+      community.insert(label, () => `loaded:${(loaderData() as any)?.greeting ?? 'NONE'}`);
+      return label;
     };
 
     const indexRoute = createRoute({
@@ -116,37 +76,96 @@ describe('NativeScript rendering pipeline (universal renderer + solid-web-shim)'
     });
 
     await router.load();
-
     expect(router.state.matches.find((m) => m.routeId === '/')?.status).toBe('success');
 
-    const page = makeNode('page');
-    let caught: any;
-    const dispose = universal.render(
-      (() =>
-        createComponent(RouterContextProvider as any, {
-          router,
-          children: () =>
-            createComponent(ErrorBoundary, {
-              fallback: (err: any) => {
-                caught = err;
-                return null as any;
-              },
-              get children() {
-                return createComponent(HomeComponent, {});
-              },
-            }),
-        })) as any,
-      page,
-    );
-
-    // Allow Solid effects to flush
-    await new Promise((r) => setTimeout(r, 50));
+    const { page, dispose, caught } = renderIntoPage(router, () => createComponent(HomeComponent, {}));
+    await settle();
 
     expect(homeInvocations, 'Home should have rendered exactly once').toBe(1);
     expect(lastLoaderData).toEqual({ greeting: 'hello' });
-    expect(caught, `ErrorBoundary should not have caught anything but got: ${caught?.message ?? caught}`).toBeUndefined();
-    expect(page.children.length, 'page should have an inserted view subtree').toBeGreaterThan(0);
+    expect(caught()).toBeUndefined();
+    expect(page.content?.tag).toBe('label');
+    expect(page.content?.children[0]?.text).toBe('loaded:hello');
 
     dispose();
+  });
+
+  it("renders nested matches through the router's own <Match> / <Outlet /> (Dynamic, memo, mergeProps from the shim)", async () => {
+    const rootRoute = createRootRoute();
+
+    const layoutRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/virtual',
+      component: () => {
+        const stack = community.createElement('stacklayout');
+        community.insert(stack, () => createComponent(Outlet, {}));
+        return stack;
+      },
+    });
+
+    const inspectorRoute = createRoute({
+      getParentRoute: () => layoutRoute,
+      path: '/inspector',
+      loader: () => ({ title: 'Inspector' }),
+      component: () => {
+        const data = getRouteApi('/virtual/inspector').useLoaderData();
+        const label = community.createElement('label');
+        community.insert(label, () => (data() as any).title);
+        return label;
+      },
+    });
+
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([layoutRoute.addChildren([inspectorRoute])]),
+      history: createMemoryHistory({ initialEntries: ['/virtual/inspector'] }),
+    });
+
+    await router.load();
+
+    const { page, dispose, caught } = renderIntoPage(router, () => createComponent(Match, { routeId: layoutRoute.id }));
+    await settle();
+
+    expect(caught()).toBeUndefined();
+    expect(collectTags(page)).toEqual(['stacklayout', 'label']);
+    const label = page.content!.children.find((c) => c.tag === 'label');
+    expect(label?.children[0]?.text).toBe('Inspector');
+
+    dispose();
+  });
+});
+
+describe('solid-web-shim', () => {
+  it('Dynamic creates intrinsic elements through the NativeScript renderer', () => {
+    const host = new FakeNode('page');
+    const dispose = community.render(() => createComponent(shim.Dynamic, { component: 'label', text: 'hi' }), host);
+    flush();
+
+    expect(host.content?.tag).toBe('label');
+    expect(host.content?.attrs.text).toBe('hi');
+    dispose();
+  });
+
+  it('Dynamic renders function components and nothing for an unset component', () => {
+    const host = new FakeNode('page');
+    const Comp = (props: { text: string }) => {
+      const node = community.createElement('button');
+      community.setProp(node, 'text', props.text);
+      return node;
+    };
+    const dispose = community.render(() => [createComponent(shim.Dynamic, { component: Comp, text: 'tap' }), createComponent(shim.Dynamic, { component: undefined })], host);
+    flush();
+
+    expect(collectTags(host)).toEqual(['button']);
+    expect(host.content?.attrs.text).toBe('tap');
+    dispose();
+  });
+
+  it('DOM templates fail loudly when instantiated instead of yielding an undefined node', () => {
+    const create = shim.template('<p>Not Found');
+    expect(() => create()).toThrow(/<p> DOM fallback cannot render in NativeScript/);
+  });
+
+  it('reports a client environment', () => {
+    expect(shim.isServer).toBe(false);
   });
 });
