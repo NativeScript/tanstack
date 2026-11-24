@@ -125,14 +125,10 @@ describe('subscribeSolidHmrRemount', () => {
 
   it('passes the freshly-patched component when a component file change propagates to a route file boundary', () => {
     // Mirrors the production HMR pipeline: editing
-    // `/src/components/home.tsx` triggers the HMR client's BFS pass-2,
-    // which discovers `/src/routes/index.tsx` (the route file that
-    // imports home.tsx) as a boundary. The HMR client re-imports the
-    // route file and patches `route.options.component` to the freshly-
-    // imported reference. The listener then reads that fresh reference
-    // and passes it through to the page remount — keeping the visible
-    // tree in sync with the edited source even when solid-refresh's
-    // proxy patch does not propagate to the page-level renderEffect.
+    // `/src/components/home.tsx` makes the HMR client discover
+    // `/src/routes/index.tsx` (the route file that imports home.tsx) as a
+    // boundary, re-import it and patch `route.options.component` with the
+    // fresh export. The listener passes that reference to the page remount.
     const home = new FakePage('/');
     const frame = new FakeFrame();
     frame.currentPage = home;

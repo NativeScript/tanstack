@@ -7,7 +7,6 @@
     "moduleResolution": "bundler",
     "lib": ["ESNext", "DOM"],
     "jsx": "preserve",
-    "jsxImportSource": "solid-js",
     "allowJs": true,
     "types": ["node", "@nativescript/core"],
     "allowSyntheticDefaultImports": true,
